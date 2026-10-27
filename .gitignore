@@ -1,0 +1,4 @@
+/target
+/.claude/
+*.orig
+.DS_Store
