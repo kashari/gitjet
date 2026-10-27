@@ -20,6 +20,7 @@ pub struct Config {
     pub local_history: LocalHistoryConfig,
     pub update: UpdateConfig,
     pub hosting: HostingConfig,
+    pub performance: PerformanceConfig,
     /// Set when the config file exists but could not be parsed.
     #[serde(skip)]
     pub load_error: Option<String>,
@@ -118,6 +119,24 @@ impl Default for HostingConfig {
     }
 }
 
+/// Settings for very large repositories.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PerformanceConfig {
+    /// Write git's commit-graph file in the background when a large repository has none.
+    /// It is the cache `git maintenance` and `git gc` also write; it makes the log, ahead/behind
+    /// counts and "branches containing" several times faster.
+    pub write_commit_graph: bool,
+}
+
+impl Default for PerformanceConfig {
+    fn default() -> Self {
+        Self {
+            write_commit_graph: true,
+        }
+    }
+}
+
 fn yes() -> bool {
     true
 }
@@ -134,6 +153,7 @@ impl Default for Config {
             local_history: LocalHistoryConfig::default(),
             update: UpdateConfig::default(),
             hosting: HostingConfig::default(),
+            performance: PerformanceConfig::default(),
             load_error: None,
         }
     }

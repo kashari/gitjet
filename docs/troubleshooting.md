@@ -197,6 +197,28 @@ the command line.
 
 ## Large repositories
 
+gitjet runs every git command off the screen thread, so keys and tab switches stay instant even
+when git is slow; data shows "Loading…" until it arrives. If loading itself takes long:
+
+- **Windows is slower at starting programs**: each git command costs 50–150 ms there, more with
+  real-time antivirus scanning. Excluding your repositories and Git's install folder from
+  scanning (if your security policy allows it) helps a lot.
+- **Many branches or a long history**: gitjet writes git's commit-graph cache in the background
+  for large repositories (see `[performance]` in [Configuration](configuration.md)). You can also
+  let Git keep it up to date itself:
+
+  ```bash
+  git maintenance start
+  ```
+
+- **Many files** (slow `git status`): turn on Git's file system monitor and untracked cache in
+  that repository:
+
+  ```bash
+  git config core.fsmonitor true
+  git config core.untrackedCache true
+  ```
+
 - The Log loads commits in pages (`log.page_size`, default 500) and loads more as you scroll. Use
   filters (`f`), or `a` to show only `HEAD` instead of all branches, to reduce what is loaded.
   Set `all_branches = false` under `[log]` to make that the default.

@@ -163,6 +163,7 @@ impl App {
         app.refresh_head();
         app.ensure_fresh(0);
         app.ensure_fresh(Tab::Conflicts.index());
+        app.maintain_repo();
         app.had_conflicts = app.views[Tab::Conflicts.index()].badge().is_some();
         app
     }
@@ -255,6 +256,7 @@ impl App {
                     self.popups.clear();
                     self.refresh_head();
                     self.ensure_fresh(self.active);
+                    self.maintain_repo();
                     let name = self.ctx.repo.name();
                     self.apply(Action::Toast(format!("Opened {name}")));
                 }
@@ -356,6 +358,18 @@ impl App {
         }
         for a in polled {
             self.apply(a);
+        }
+    }
+
+    /// Silent background upkeep for large repositories (commit-graph), when enabled.
+    fn maintain_repo(&mut self) {
+        if self.ctx.config.performance.write_commit_graph {
+            self.spawn(Task {
+                label: "Write commit-graph".into(),
+                job: Box::new(|repo| repo.ensure_commit_graph().map(|w| w.to_string())),
+                silent: true,
+                then: None,
+            });
         }
     }
 

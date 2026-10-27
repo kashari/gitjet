@@ -241,6 +241,37 @@ impl Repo {
             .filter(|s| !s.is_empty())
     }
 
+    /// True when git's commit-graph file exists (single file or split chain).
+    pub fn has_commit_graph(&self) -> bool {
+        let info = self.common_dir.join("objects").join("info");
+        info.join("commit-graph").exists()
+            || info
+                .join("commit-graphs")
+                .join("commit-graph-chain")
+                .exists()
+    }
+
+    /// Write the commit-graph when the repository is large and has none. Returns whether it wrote one.
+    /// Small repositories are skipped: there the graph doesn't matter and we don't touch `.git`.
+    pub fn ensure_commit_graph(&self) -> Result<bool> {
+        if self.has_commit_graph() {
+            return Ok(false);
+        }
+        let objects: u64 = self
+            .run(&["count-objects", "-v"])?
+            .lines()
+            .filter_map(|l| l.split_once(": "))
+            .filter(|(k, _)| *k == "count" || *k == "in-pack")
+            .filter_map(|(_, v)| v.trim().parse::<u64>().ok())
+            .sum();
+        let refs = self.run(&["for-each-ref", "--format=x"])?.lines().count();
+        if objects < LARGE_REPO_OBJECTS && refs < LARGE_REPO_REFS {
+            return Ok(false);
+        }
+        self.run(&["commit-graph", "write", "--reachable"])?;
+        Ok(true)
+    }
+
     /// Resolve any revision to a full hash.
     pub fn rev_parse(&self, rev: &str) -> Result<String> {
         Ok(self
@@ -249,6 +280,10 @@ impl Repo {
             .to_string())
     }
 }
+
+/// Object and ref counts from which a repository counts as large (see [`Repo::ensure_commit_graph`]).
+const LARGE_REPO_OBJECTS: u64 = 20_000;
+const LARGE_REPO_REFS: usize = 300;
 
 fn spawn_error(e: std::io::Error, args: &[&str]) -> anyhow::Error {
     anyhow!(
@@ -353,6 +388,23 @@ mod tests {
         let sub = repo.root.join("nested");
         std::fs::create_dir_all(&sub).unwrap();
         assert_eq!(Repo::discover(&sub).unwrap().root, repo.root);
+    }
+
+    #[test]
+    fn commit_graph_only_for_large_repos() {
+        let (_d, repo) = temp_repo();
+        commit_files(&repo, &[("a.txt", "1\n")], "one");
+        assert!(
+            !repo.ensure_commit_graph().unwrap(),
+            "small repo is left alone"
+        );
+        assert!(!repo.has_commit_graph());
+        for i in 0..LARGE_REPO_REFS {
+            repo.run(&["branch", &format!("b{i}")]).unwrap();
+        }
+        assert!(repo.ensure_commit_graph().unwrap());
+        assert!(repo.has_commit_graph());
+        assert!(!repo.ensure_commit_graph().unwrap(), "written only once");
     }
 
     #[test]

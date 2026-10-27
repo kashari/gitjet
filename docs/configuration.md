@@ -258,6 +258,12 @@ host = "mirror.example.com"
 kind = "none"
 ```
 
+### `[performance]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `write_commit_graph` | bool | `true` | When a large repository (20,000+ objects or 300+ refs) has no commit-graph file, write one in the background with `git commit-graph write --reachable`. It is the same cache `git gc` and `git maintenance` write, and it makes the Log, ahead/behind counts and "branches containing" several times faster. Set to `false` if gitjet should never write to `.git/objects`. |
+
 ## Per-repository data: `.git/gitjet/`
 
 gitjet keeps the data that belongs to one repository inside that repository's Git directory, in a
