@@ -7,6 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-27
+
+### Changed
+
+- The status bar (branch, ahead/behind, operation in progress) loads in the background instead
+  of running git on every refresh, so refreshes no longer freeze the screen on Windows.
+- Log queries start one git process fewer.
+- Push errors now show why the remote rejected the push (for example "fetch first") instead of
+  only "failed to push some refs".
+
+### Added
+
+- Large repositories (20,000+ objects or 300+ refs): gitjet writes git's commit-graph cache in
+  the background when none exists, which makes the log, ahead/behind counts and "branches
+  containing" several times faster. Turn it off with `write_commit_graph = false` under
+  `[performance]`.
+- Troubleshooting guide: tips for large repositories and Windows.
+
 ## [0.1.0] - 2026-10-27
 
 Initial release.
@@ -151,5 +169,6 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/OWNER/gitjet/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/OWNER/gitjet/releases/tag/v0.1.0
+[Unreleased]: https://github.com/klajdishark/gitjet/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/klajdishark/gitjet/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/klajdishark/gitjet/releases/tag/v0.1.0

@@ -4,7 +4,7 @@
 class Gitjet < Formula
   desc "Keyboard-driven terminal Git client with IDE-grade features"
   homepage "https://github.com/klajdishark/gitjet"
-  version "0.1.0"
+  version "0.1.1"
   license "MIT"
 
   on_macos do

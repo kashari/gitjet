@@ -21,7 +21,7 @@ Report them privately through GitHub Security Advisories:
 3. Describe the problem, the affected version (`gitjet --version`), your OS and terminal, and the
    steps to reproduce it. A proof of concept helps.
 
-You can also use this direct link: <https://github.com/OWNER/gitjet/security/advisories/new>.
+You can also use this direct link: <https://github.com/klajdishark/gitjet/security/advisories/new>.
 
 We will confirm that we received the report, keep you updated while we investigate, and credit
 you in the advisory when the fix is released, unless you prefer to stay anonymous. Please give us

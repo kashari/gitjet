@@ -3,9 +3,9 @@
 Thank you for helping improve gitjet. Bug reports, documentation fixes and pull requests are all
 welcome. Please follow the [code of conduct](CODE_OF_CONDUCT.md) in all project spaces.
 
-- Found a bug? [Open an issue](https://github.com/OWNER/gitjet/issues/new?template=bug_report.md)
+- Found a bug? [Open an issue](https://github.com/klajdishark/gitjet/issues/new?template=bug_report.md)
   with your OS, terminal, `gitjet --version` and `git --version`.
-- Have an idea? [Suggest a feature](https://github.com/OWNER/gitjet/issues/new?template=feature_request.md).
+- Have an idea? [Suggest a feature](https://github.com/klajdishark/gitjet/issues/new?template=feature_request.md).
   Describe the task you want to do and how you would expect it to work.
 - Found a security problem? Do not open a public issue; see [SECURITY.md](SECURITY.md).
 

@@ -8,7 +8,7 @@ assignees: ""
 
 <!--
 Thanks for reporting a bug. Please check the troubleshooting page first:
-https://github.com/OWNER/gitjet/blob/main/docs/troubleshooting.md
+https://github.com/klajdishark/gitjet/blob/main/docs/troubleshooting.md
 
 Security problems: do not open an issue, see SECURITY.md.
 -->

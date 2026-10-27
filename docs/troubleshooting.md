@@ -3,7 +3,7 @@
 # Troubleshooting
 
 Answers to common problems. If your problem is not here, please
-[open an issue](https://github.com/OWNER/gitjet/issues) with your OS, terminal,
+[open an issue](https://github.com/klajdishark/gitjet/issues) with your OS, terminal,
 `gitjet --version` and `git --version`.
 
 - [Git and repositories](#git-and-repositories)

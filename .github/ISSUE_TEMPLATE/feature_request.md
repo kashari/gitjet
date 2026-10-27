@@ -9,7 +9,7 @@ assignees: ""
 <!--
 Thanks for the suggestion. Please search the existing issues first, and check the feature
 overview to see whether gitjet already does it:
-https://github.com/OWNER/gitjet/blob/main/docs/feature-overview.md
+https://github.com/klajdishark/gitjet/blob/main/docs/feature-overview.md
 -->
 
 ## The problem
