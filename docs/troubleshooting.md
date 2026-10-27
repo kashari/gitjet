@@ -211,7 +211,7 @@ when git is slow; data shows "Loading…" until it arrives. If loading itself ta
   git maintenance start
   ```
 
-- **Many files** (slow `git status`): turn on Git's file system monitor and untracked cache in
+- **Many files** (slow `git status`): turn on Git's built-in file system monitor (Windows and macOS, Git 2.37+) and untracked cache in
   that repository:
 
   ```bash
