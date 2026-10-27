@@ -79,9 +79,6 @@ const FORMAT: &str =
 
 impl Repo {
     pub fn log(&self, q: &LogQuery) -> Result<Vec<Commit>> {
-        if self.head_commit().is_none() && !q.all && q.revs.is_empty() {
-            return Ok(Vec::new());
-        }
         let mut args: Vec<String> = vec![
             "log".into(),
             FORMAT.into(),
@@ -127,7 +124,12 @@ impl Repo {
         args.push("--".into());
         args.extend(q.paths.iter().cloned());
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        Ok(parse_log(&self.run(&refs)?))
+        match self.run(&refs) {
+            Ok(out) => Ok(parse_log(&out)),
+            // An empty repository has no HEAD to walk; checking only on failure saves a process.
+            Err(_) if q.revs.is_empty() && self.head_commit().is_none() => Ok(Vec::new()),
+            Err(e) => Err(e),
+        }
     }
 
     /// A single commit's metadata.

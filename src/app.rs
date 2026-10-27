@@ -49,6 +49,30 @@ struct TaskDone {
     result: Result<String>,
 }
 
+fn load_head(repo: &Repo) -> HeadInfo {
+    let branch = repo.head_branch().unwrap_or_else(|| {
+        repo.try_run(&["rev-parse", "--short", "HEAD"])
+            .map(|s| format!("detached at {}", s.trim()))
+            .unwrap_or_else(|| "no commits yet".into())
+    });
+    let state = repo.state();
+    let (mut ahead, mut behind, mut has_upstream) = (0, 0, false);
+    if let Some(out) = repo.try_run(&["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+    {
+        let mut it = out.split_whitespace();
+        ahead = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        behind = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        has_upstream = true;
+    }
+    HeadInfo {
+        branch,
+        state: (state != RepoState::Clean).then_some(state),
+        ahead,
+        behind,
+        has_upstream,
+    }
+}
+
 #[derive(Default)]
 struct HeadInfo {
     branch: String,
@@ -75,6 +99,7 @@ pub struct App {
     pending_suspend: Option<Command>,
     quit: bool,
     head: HeadInfo,
+    head_loader: crate::ui::bg::Background<HeadInfo>,
     tab_hits: Vec<(u16, u16, usize)>,
     last_snapshot: Instant,
     ticks: usize,
@@ -127,6 +152,7 @@ impl App {
             pending_suspend: None,
             quit: false,
             head: HeadInfo::default(),
+            head_loader: crate::ui::bg::Background::new(),
             tab_hits: Vec::new(),
             last_snapshot: Instant::now(),
             ticks: 0,
@@ -300,6 +326,9 @@ impl App {
 
     fn tick(&mut self) {
         self.ticks = self.ticks.wrapping_add(1);
+        if let Some(head) = self.head_loader.poll() {
+            self.head = head;
+        }
         if let Some(t) = &self.toast {
             let ttl = if t.error { 10 } else { 4 };
             if t.at.elapsed() > Duration::from_secs(ttl) {
@@ -330,30 +359,9 @@ impl App {
         }
     }
 
+    /// Branch, upstream and operation state for the status bar, loaded in the background.
     fn refresh_head(&mut self) {
-        let repo = &self.ctx.repo;
-        let branch = repo.head_branch().unwrap_or_else(|| {
-            repo.try_run(&["rev-parse", "--short", "HEAD"])
-                .map(|s| format!("detached at {}", s.trim()))
-                .unwrap_or_else(|| "no commits yet".into())
-        });
-        let state = repo.state();
-        let (mut ahead, mut behind, mut has_upstream) = (0, 0, false);
-        if let Some(out) =
-            repo.try_run(&["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
-        {
-            let mut it = out.split_whitespace();
-            ahead = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-            behind = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-            has_upstream = true;
-        }
-        self.head = HeadInfo {
-            branch,
-            state: (state != RepoState::Clean).then_some(state),
-            ahead,
-            behind,
-            has_upstream,
-        };
+        self.head_loader.start(&self.ctx.repo, load_head);
     }
 
     fn refresh_all(&mut self) {

@@ -1,5 +1,6 @@
 //! UI framework: tabs are [`View`]s, everything on top (dialogs, menus, fullscreen tools) is a [`Popup`].
 
+pub mod bg;
 pub mod diff_view;
 pub mod popups;
 pub mod views;
