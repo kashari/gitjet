@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-28
+
 ### Changed
 
 - Checking out a branch takes it from the remote as-is (`[branches] checkout_from_remote`, on by
@@ -206,7 +208,8 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/kashari/gitjet/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/kashari/gitjet/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/kashari/gitjet/compare/v0.1.2...v0.1.4
 [0.1.2]: https://github.com/kashari/gitjet/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/klajdishark/gitjet/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/klajdishark/gitjet/releases/tag/v0.1.0

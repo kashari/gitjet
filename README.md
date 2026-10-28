@@ -54,23 +54,23 @@ gitjet is one executable. You need [Git](https://git-scm.com) installed.
 **Windows** (PowerShell):
 
 ```powershell
-irm https://github.com/klajdishark/gitjet/releases/latest/download/install.ps1 | iex
+irm https://github.com/kashari/gitjet/releases/latest/download/install.ps1 | iex
 ```
 
 **macOS / Linux**:
 
 ```bash
-curl -fsSL https://github.com/klajdishark/gitjet/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/kashari/gitjet/releases/latest/download/install.sh | sh
 ```
 
 **Manual**: download the archive for your platform from the
-[releases page](https://github.com/klajdishark/gitjet/releases), unpack it, and put `gitjet`
+[releases page](https://github.com/kashari/gitjet/releases), unpack it, and put `gitjet`
 (`gitjet.exe` on Windows) somewhere on your `PATH`.
 
 **From source** (Rust 1.80+):
 
 ```bash
-cargo install --git https://github.com/klajdishark/gitjet
+cargo install --git https://github.com/kashari/gitjet
 ```
 
 | Platform | Archive |
