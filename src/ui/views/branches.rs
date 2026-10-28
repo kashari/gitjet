@@ -4,6 +4,7 @@
 mod compare;
 mod new_branch;
 mod ops;
+mod remote_checkout;
 #[cfg(test)]
 mod tests;
 mod tree;

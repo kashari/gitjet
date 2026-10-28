@@ -327,13 +327,18 @@ pub enum CheckoutTarget {
     Existing(String),
     /// A new local branch tracking a remote-tracking branch
     Tracking { local: String, remote_ref: String },
+    /// Local branch `local` (created or reset) exactly at remote-tracking branch `remote_ref`,
+    /// tracking it: "check out from the remote"
+    FromRemote { local: String, remote_ref: String },
 }
 
 impl CheckoutTarget {
     pub fn label(&self) -> &str {
         match self {
             CheckoutTarget::Existing(n) => n,
-            CheckoutTarget::Tracking { local, .. } => local,
+            CheckoutTarget::Tracking { local, .. } | CheckoutTarget::FromRemote { local, .. } => {
+                local
+            }
         }
     }
 
@@ -343,8 +348,86 @@ impl CheckoutTarget {
             CheckoutTarget::Tracking { local, remote_ref } => {
                 checkout_tracking(repo, local, remote_ref, force)
             }
+            CheckoutTarget::FromRemote { local, remote_ref } => {
+                validate_name(repo, local)?;
+                let mut args = vec!["checkout"];
+                if force {
+                    args.push("-f");
+                }
+                args.extend(["-B", local, "--track", remote_ref, "--"]);
+                repo.run(&args).map(|_| ())
+            }
         }
     }
+}
+
+/// The remote branch a checkout takes a branch from (see `[branches] checkout_from_remote`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteSource {
+    pub remote: String,
+    /// Branch name on the remote
+    pub branch: String,
+    /// Local branch name
+    pub local: String,
+}
+
+impl RemoteSource {
+    /// Remote-tracking branch in short form (`origin/main`).
+    pub fn remote_ref(&self) -> String {
+        format!("{}/{}", self.remote, self.branch)
+    }
+}
+
+/// Where to check out `b` from: a remote branch is its own source (local name: its short name);
+/// a local branch uses its upstream, else the same name on a remote (`origin` first). None for a
+/// branch that exists only locally.
+pub fn remote_source(repo: &Repo, b: &Branch, all: &[Branch]) -> Option<RemoteSource> {
+    if let Some(remote) = &b.remote {
+        return Some(RemoteSource {
+            remote: remote.clone(),
+            branch: b.short_name().to_string(),
+            local: b.short_name().to_string(),
+        });
+    }
+    if let Some(up) = crate::git::remote::upstream_of(repo, &b.name) {
+        return Some(RemoteSource {
+            remote: up.remote,
+            branch: up.branch,
+            local: b.name.clone(),
+        });
+    }
+    let mut same_name: Vec<&Branch> = all
+        .iter()
+        .filter(|r| r.is_remote() && r.short_name() == b.name)
+        .collect();
+    same_name.sort_by_key(|r| r.remote.as_deref() != Some("origin"));
+    same_name.first().map(|r| RemoteSource {
+        remote: r.remote.clone().unwrap_or_default(),
+        branch: b.name.clone(),
+        local: b.name.clone(),
+    })
+}
+
+/// Fetch only `src`'s branch, updating its remote-tracking branch (no tags).
+pub fn fetch_one(repo: &Repo, src: &RemoteSource) -> Result<()> {
+    let refspec = format!(
+        "+refs/heads/{}:refs/remotes/{}/{}",
+        src.branch, src.remote, src.branch
+    );
+    crate::git::remote::run_net(repo, &["fetch", "--no-tags", &src.remote, &refspec])
+        .map(|_| ())
+        .map_err(|e| crate::git::remote::auth_hint(e, "Fetch"))
+}
+
+/// Commits on local branch `local` that are not in `remote_ref`, with the local tip. None when
+/// there is no such local branch.
+pub fn commits_only_local(repo: &Repo, local: &str, remote_ref: &str) -> Option<(u32, String)> {
+    let tip = repo.rev_parse(&format!("refs/heads/{local}")).ok()?;
+    let n = repo
+        .try_run(&["rev-list", "--count", &format!("{remote_ref}..{tip}")])
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+    Some((n, tip))
 }
 
 /// Result of a smart checkout.

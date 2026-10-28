@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Checking out a branch takes it from the remote as-is (`[branches] checkout_from_remote`, on by
+  default): gitjet fetches that branch, then creates or resets the local branch to the remote one
+  and tracks it. A dialog shows each step (looking up, fetching, comparing, switching). When the
+  local branch has commits that are not on the remote, gitjet asks whether to reset it or check
+  out the local branch as it is. Offline, the last fetched state is used. Set the option to
+  `false` for the previous behavior.
+
 ## [0.1.2] - 2026-10-28
 
 ### Changed

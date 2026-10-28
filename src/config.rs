@@ -21,6 +21,7 @@ pub struct Config {
     pub update: UpdateConfig,
     pub hosting: HostingConfig,
     pub performance: PerformanceConfig,
+    pub branches: BranchesConfig,
     /// Set when the config file exists but could not be parsed.
     #[serde(skip)]
     pub load_error: Option<String>,
@@ -129,6 +130,22 @@ pub struct PerformanceConfig {
     pub write_commit_graph: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BranchesConfig {
+    /// Checking out a branch takes it from the remote as-is: fetch it, then create or reset the
+    /// local branch to the remote one (asking first when that would drop unpushed commits).
+    pub checkout_from_remote: bool,
+}
+
+impl Default for BranchesConfig {
+    fn default() -> Self {
+        Self {
+            checkout_from_remote: true,
+        }
+    }
+}
+
 impl Default for PerformanceConfig {
     fn default() -> Self {
         Self {
@@ -154,6 +171,7 @@ impl Default for Config {
             update: UpdateConfig::default(),
             hosting: HostingConfig::default(),
             performance: PerformanceConfig::default(),
+            branches: BranchesConfig::default(),
             load_error: None,
         }
     }

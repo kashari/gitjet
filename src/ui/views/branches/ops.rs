@@ -55,6 +55,9 @@ pub fn checkout(ctx: &Ctx, b: &Branch) -> Action {
     if b.is_head {
         return Action::Toast(format!("Already on {}", b.name));
     }
+    if ctx.config.branches.checkout_from_remote {
+        return super::remote_checkout::open(ctx, b);
+    }
     if b.is_remote() {
         return checkout_remote(ctx, b);
     }
@@ -106,7 +109,7 @@ pub fn run_checkout(ctx: &Ctx, target: CheckoutTarget) -> Action {
     }
 }
 
-fn local_changes_menu(target: CheckoutTarget, err: String) -> Action {
+pub(super) fn local_changes_menu(target: CheckoutTarget, err: String) -> Action {
     let label = target.label().to_string();
     let blockers = CheckoutBlockers::parse(&err);
     let mut items = Vec::new();
