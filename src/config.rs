@@ -14,6 +14,8 @@ pub struct Config {
     pub mouse: bool,
     /// Editor command; falls back to $VISUAL / $EDITOR / notepad / vi
     pub editor: Option<String>,
+    /// Run terminal editors (vim, nano...) in a pane inside gitjet instead of leaving the TUI
+    pub embedded_editor: bool,
     pub diff: DiffConfig,
     pub commit: CommitConfig,
     pub log: LogConfig,
@@ -164,6 +166,7 @@ impl Default for Config {
             theme: "dark".into(),
             mouse: true,
             editor: None,
+            embedded_editor: true,
             diff: DiffConfig::default(),
             commit: CommitConfig::default(),
             log: LogConfig::default(),

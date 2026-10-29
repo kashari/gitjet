@@ -42,6 +42,12 @@ pub enum Action {
     Error(String),
     /// Run work in the background with a spinner.
     Spawn(Task),
+    /// Open a file (optionally at a 1-based line) in the user's editor: in a pane inside gitjet
+    /// for terminal editors, otherwise like `Suspend`.
+    Edit {
+        path: PathBuf,
+        line: Option<usize>,
+    },
     /// Leave the TUI, run an interactive command (editor, ssh prompt...), then come back and refresh.
     Suspend(Command),
     /// Open another repository (worktree, submodule, nested repo, recent repo).
@@ -51,6 +57,13 @@ pub enum Action {
 }
 
 impl Action {
+    pub fn edit(path: impl Into<PathBuf>, line: Option<usize>) -> Self {
+        Action::Edit {
+            path: path.into(),
+            line,
+        }
+    }
+
     pub fn popup(p: impl Popup + 'static) -> Self {
         Action::Popup(Box::new(p))
     }

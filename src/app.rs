@@ -21,6 +21,7 @@ use crate::action::{Action, Task};
 use crate::ctx::Ctx;
 use crate::git::{Repo, RepoState};
 use crate::ui::popups::{MenuItem, MenuPopup, MessagePopup};
+use crate::ui::terminal::TerminalPane;
 use crate::ui::views::{self, Tab};
 use crate::ui::{KeyHelp, Popup, View};
 
@@ -34,6 +35,17 @@ pub fn spinner_frame(since: Instant) -> &'static str {
 
 /// Terminals report focus changes often (every Alt+Tab); a refresh this recent makes another redundant.
 const FOCUS_REFRESH_MIN_GAP: Duration = Duration::from_secs(1);
+
+/// Tab bar, main area, status bar and key hints.
+pub fn layout(area: Rect) -> [Rect; 4] {
+    Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(area)
+}
 
 const GLOBAL_HELP: [KeyHelp; 7] = [
     ("1-9", "switch tab"),
@@ -118,6 +130,8 @@ pub struct App {
     last_snapshot: Instant,
     /// Reference point for the status-bar spinner.
     started: Instant,
+    /// Terminal size at the last draw, to size embedded editors before their first draw.
+    screen: Rect,
 }
 
 pub fn run(ctx: Ctx) -> Result<()> {
@@ -173,6 +187,7 @@ impl App {
             tab_hits: Vec::new(),
             last_snapshot: Instant::now(),
             started: Instant::now(),
+            screen: Rect::default(),
         };
         if let Some(e) = app.ctx.config.load_error.clone() {
             app.apply(Action::Error(format!("Config error (using defaults): {e}")));
@@ -187,7 +202,10 @@ impl App {
     fn event_loop(&mut self, terminal: &mut DefaultTerminal, mouse: bool) -> Result<()> {
         loop {
             terminal.draw(|f| self.draw(f))?;
-            if event::poll(Duration::from_millis(100))? {
+            // An embedded editor's output arrives on its own: redraw soon enough to feel live.
+            let embedded = self.popups.last().is_some_and(|p| p.captures_everything());
+            let wait = Duration::from_millis(if embedded { 15 } else { 100 });
+            if event::poll(wait)? {
                 // Drain all queued events before redrawing.
                 loop {
                     match event::read()? {
@@ -270,6 +288,7 @@ impl App {
                 }
             }
             Action::Spawn(task) => self.spawn(task),
+            Action::Edit { path, line } => self.edit(&path, line),
             Action::Suspend(cmd) => self.pending_suspend = Some(cmd),
             Action::SwitchRepo(path) => match Repo::discover(&path) {
                 Ok(repo) => {
@@ -293,6 +312,22 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Terminal editors run in a pane over the main area; others take over the terminal.
+    fn edit(&mut self, path: &std::path::Path, line: Option<usize>) {
+        let configured = self.ctx.config.editor.clone();
+        let configured = configured.as_deref();
+        let argv = crate::util::embedded_editor_argv(configured, path, line)
+            .filter(|_| self.ctx.config.embedded_editor);
+        if let Some(argv) = argv {
+            match TerminalPane::spawn(&argv, &self.ctx.repo.root, self.screen) {
+                Ok(pane) => return self.apply(Action::popup(pane)),
+                Err(e) => self.apply(Action::Toast(format!("Embedded editor failed ({e:#})"))),
+            }
+        }
+        let cmd = crate::util::editor_command(configured, path, line);
+        self.apply(Action::Suspend(cmd));
     }
 
     fn spawn(&mut self, task: Task) {
@@ -462,6 +497,11 @@ impl App {
     // ----- input ---------------------------------------------------------------------------
 
     fn on_key(&mut self, key: KeyEvent) {
+        if let Some(p) = self.popups.last_mut().filter(|p| p.captures_everything()) {
+            let a = p.handle_key(key, &self.ctx);
+            self.apply(a);
+            return;
+        }
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             self.quit = true;
             return;
@@ -610,13 +650,8 @@ impl App {
 
     fn draw(&mut self, f: &mut Frame) {
         let area = f.area();
-        let [tabs, main, status, hints] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .areas(area);
+        self.screen = area;
+        let [tabs, main, status, hints] = layout(area);
         self.draw_tabs(f, tabs);
         self.views[self.active].draw(f, main, &self.ctx);
         self.draw_status(f, status);

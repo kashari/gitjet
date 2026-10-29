@@ -637,11 +637,7 @@ fn edit_file(ctx: &Ctx, file: IgnoreFile, line: Option<usize>) -> Action {
             return Action::error(format!("creating {}: {e}", path.display()));
         }
     }
-    Action::Suspend(crate::util::editor_command(
-        ctx.config.editor.as_deref(),
-        &path,
-        line,
-    ))
+    Action::edit(path, line)
 }
 
 fn ignore_items(data: &Data, idx: Option<usize>) -> Vec<MenuItem> {
@@ -760,11 +756,7 @@ fn config_items(data: &Data, idx: Option<usize>) -> Vec<MenuItem> {
         .enabled(has_local),
         MenuItem::new("Open repository config in editor", "o", |ctx| {
             let path = ctx.repo.common_dir.join("config");
-            Action::Suspend(crate::util::editor_command(
-                ctx.config.editor.as_deref(),
-                &path,
-                None,
-            ))
+            Action::edit(path, None)
         }),
     ]
 }

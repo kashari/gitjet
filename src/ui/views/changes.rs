@@ -1485,11 +1485,7 @@ fn move_menu(lists: &Changelists, paths: Vec<String>) -> Action {
 }
 
 fn open_editor(ctx: &Ctx, path: &str) -> Action {
-    Action::Suspend(crate::util::editor_command(
-        ctx.config.editor.as_deref(),
-        &ctx.repo.path(path),
-        None,
-    ))
+    Action::edit(ctx.repo.path(path), None)
 }
 
 fn open_partial(ctx: &Ctx, e: &StatusEntry) -> Action {

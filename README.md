@@ -145,6 +145,7 @@ on macOS, and `~/.config/gitjet/config.toml` on Linux.
 theme = "dark"            # or "light"
 mouse = true
 # editor = "code --wait"  # defaults to $VISUAL, $EDITOR, then notepad / vi
+embedded_editor = true    # terminal editors (vim, nano...) open in a pane inside gitjet
 
 [diff]
 side_by_side = false

@@ -705,11 +705,7 @@ fn edit(ctx: &Ctx, path: &str) -> Action {
     let line = std::fs::read_to_string(&abs)
         .ok()
         .and_then(|s| conflict::marker_lines(&s).first().map(|l| l + 1));
-    Action::Suspend(util::editor_command(
-        ctx.config.editor.as_deref(),
-        &abs,
-        line,
-    ))
+    Action::edit(abs, line)
 }
 
 fn side_name(side: Option<Side>) -> &'static str {

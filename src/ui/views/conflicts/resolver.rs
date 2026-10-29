@@ -912,11 +912,7 @@ fn write_and_edit(
 /// Open the work-tree file in the external editor; it is reloaded as the result on the next refresh.
 fn open_editor(ctx: &Ctx, path: &str, line: Option<usize>, shared: &Shared) -> Action {
     shared.reload.set(true);
-    Action::Suspend(util::editor_command(
-        ctx.config.editor.as_deref(),
-        &ctx.repo.path(path),
-        line,
-    ))
+    Action::edit(ctx.repo.path(path), line)
 }
 
 fn capitalize(s: &str) -> String {
@@ -1329,7 +1325,7 @@ mod tests {
 
     fn has_suspend(a: &Action) -> bool {
         match a {
-            Action::Suspend(_) => true,
+            Action::Edit { .. } => true,
             Action::Batch(v) => v.iter().any(has_suspend),
             _ => false,
         }
