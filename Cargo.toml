@@ -1,6 +1,6 @@
 [package]
 name = "gitjet"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 rust-version = "1.80"
 description = "A keyboard-driven terminal Git client with IDE-grade features: changelists, shelf, partial commits, 3-way merge, interactive rebase, blame, local history and more"

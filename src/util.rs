@@ -9,16 +9,22 @@ pub const NOOP_EDITOR_ARG: &str = "__noop-editor";
 pub const WRITE_FILE_ARG: &str = "__write-file";
 
 /// A command that runs `cmd` through the platform shell (`cmd /C` on Windows, `sh -c` elsewhere).
+#[cfg(windows)]
 pub fn shell(cmd: &str) -> Command {
-    if cfg!(windows) {
-        let mut c = Command::new("cmd");
-        c.arg("/C").arg(cmd);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(cmd);
-        c
-    }
+    use std::os::windows::process::CommandExt;
+    // `arg` would escape inner quotes as `\"`, which cmd.exe does not understand. Pass the line
+    // verbatim; with /S, cmd strips only the outer pair of quotes and keeps the rest as written.
+    let mut c = Command::new("cmd");
+    c.args(["/S", "/C"]).raw_arg(format!("\"{cmd}\""));
+    c
+}
+
+/// A command that runs `cmd` through the platform shell (`cmd /C` on Windows, `sh -c` elsewhere).
+#[cfg(not(windows))]
+pub fn shell(cmd: &str) -> Command {
+    let mut c = Command::new("sh");
+    c.arg("-c").arg(cmd);
+    c
 }
 
 /// Quote a path so that git's shell (sh on all platforms, incl. Git for Windows) sees one argument.
