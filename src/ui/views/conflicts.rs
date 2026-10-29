@@ -324,7 +324,7 @@ impl ConflictsView {
             None => "deleted".to_string(),
         };
         let mut lines = vec![
-            Line::styled(file.path.clone(), t.text().add_modifier(Modifier::BOLD)),
+            Line::styled(file.path.clone(), t.text()),
             Line::raw(""),
             row("Conflict", file.kind.label().to_string()),
             row("Base", have(file.stages.base.is_some()).to_string()),
@@ -622,9 +622,13 @@ fn with_path(path: &str, f: fn(&Ctx, &str) -> Action) -> impl FnOnce(&Ctx) -> Ac
 
 /// Resolve one file with one side (deleting it when that side removed it).
 fn accept_one(ctx: &Ctx, path: &str, side: Side) -> Action {
-    Action::from_result(
-        conflict::accept_side(&ctx.repo, &[path.to_string()], side),
-        format!("Resolved {path} with {}", side.label()),
+    let msg = format!("Resolved {path} with {}", side.label());
+    let paths = vec![path.to_string()];
+    Action::run_op(
+        &ctx.repo,
+        format!("Accepting {}", side.label()),
+        msg,
+        move |repo| conflict::accept_side(repo, &paths, side),
     )
 }
 
@@ -674,7 +678,9 @@ fn mark_resolved(ctx: &Ctx, path: String, markers: Option<usize>) -> Action {
 
 fn mark_now(ctx: &Ctx, path: String) -> Action {
     let msg = format!("Marked {path} as resolved");
-    Action::from_result(conflict::mark_resolved(&ctx.repo, &[path]), msg)
+    Action::run_op(&ctx.repo, "Marking resolved", msg, move |repo| {
+        conflict::mark_resolved(repo, &[path])
+    })
 }
 
 fn delete(_ctx: &Ctx, path: &str) -> Action {
@@ -685,7 +691,9 @@ fn delete(_ctx: &Ctx, path: &str) -> Action {
             format!("Resolve the conflict by deleting {path} from the work tree and the index?"),
             move |ctx| {
                 let msg = format!("Deleted {path}");
-                Action::from_result(conflict::delete(&ctx.repo, &[path]), msg)
+                Action::run_op(&ctx.repo, "Deleting", msg, move |repo| {
+                    conflict::delete(repo, &[path])
+                })
             },
         )
         .danger(),

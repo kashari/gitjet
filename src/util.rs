@@ -50,27 +50,54 @@ pub fn write_file_editor(src: &Path) -> String {
     )
 }
 
-/// The user's editor: config `editor`, then $VISUAL, $EDITOR, then a platform default.
+/// The user's editor: config `editor`, then $VISUAL, $EDITOR, then a platform default (on
+/// Windows the vim of Git for Windows when installed, else notepad). A bare path with spaces,
+/// like `C:\Program Files\Git\usr\bin\vim.exe`, is quoted so the shell keeps it whole.
 pub fn editor(configured: Option<&str>) -> String {
-    configured
+    let ed = configured
         .map(str::to_string)
         .or_else(|| std::env::var("VISUAL").ok())
         .or_else(|| std::env::var("EDITOR").ok())
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if cfg!(windows) {
-                "notepad".into()
-            } else {
-                "vi".into()
-            }
-        })
+        .unwrap_or_else(default_editor);
+    quote_editor_path(&ed)
+}
+
+fn default_editor() -> String {
+    if !cfg!(windows) {
+        return "vi".into();
+    }
+    ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
+        .iter()
+        .filter_map(|v| std::env::var(v).ok())
+        .map(|dir| Path::new(&dir).join(r"Git\usr\bin\vim.exe"))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "notepad".into())
+}
+
+/// Quote `ed` when it is an unquoted path to an existing file containing spaces; anything else
+/// (a command with arguments, an already quoted path) is left as written.
+fn quote_editor_path(ed: &str) -> String {
+    let t = ed.trim();
+    if !t.starts_with('"') && t.contains(' ') && Path::new(t).is_file() {
+        format!("\"{t}\"")
+    } else {
+        t.to_string()
+    }
 }
 
 /// A command opening `path` (optionally at `line`) in the user's editor. Run it with `Action::Suspend`.
 pub fn editor_command(configured: Option<&str>, path: &Path, line: Option<usize>) -> Command {
     let ed = editor(configured);
     let p = path.to_string_lossy();
-    let base = ed.rsplit(['/', '\\']).next().unwrap_or(&ed).to_lowercase();
+    let base = ed
+        .trim_start_matches('"')
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(&ed)
+        .trim_end_matches('"')
+        .to_lowercase();
     let line_arg = match line {
         Some(n)
             if ["vi", "vim", "nvim", "nano", "emacs", "hx", "micro", "kak"]
@@ -167,6 +194,25 @@ pub fn repo_name_from_url(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_paths_with_spaces_are_quoted() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("my editors").join("vim.exe");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, "").unwrap();
+        let raw = exe.to_string_lossy().into_owned();
+        assert_eq!(editor(Some(&raw)), format!("\"{raw}\""));
+        // Already quoted, or a command with arguments: left alone.
+        assert_eq!(editor(Some(&format!("\"{raw}\""))), format!("\"{raw}\""));
+        assert_eq!(editor(Some("code --wait")), "code --wait");
+        // The quoted vim still gets the +line argument.
+        let cmd = format!(
+            "{:?}",
+            editor_command(Some(&raw), Path::new("a.txt"), Some(7))
+        );
+        assert!(cmd.contains("+7"), "{cmd}");
+    }
 
     #[test]
     fn repo_names() {

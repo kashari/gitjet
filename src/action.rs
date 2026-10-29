@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 
 use crate::git::Repo;
 use crate::ui::views::Tab;
@@ -20,6 +21,8 @@ pub struct Task {
     pub job: Job,
     /// Silent tasks show no spinner/toast and do not trigger a refresh (e.g. local-history snapshots).
     pub silent: bool,
+    /// Toast the result when done; off when `then` presents the outcome itself.
+    pub report: bool,
     /// Follow-up applied after the result toast and refresh.
     pub then: Option<Then>,
 }
@@ -60,6 +63,7 @@ impl Action {
             label: label.into(),
             job: Box::new(job),
             silent: false,
+            report: true,
             then: None,
         })
     }
@@ -74,8 +78,54 @@ impl Action {
             label: label.into(),
             job: Box::new(job),
             silent: false,
+            report: true,
             then: Some(Box::new(then)),
         })
+    }
+
+    /// Run `job` off the UI thread (spinner labelled `label` in the status bar), then turn its
+    /// result into an action on the UI thread: a toast, a follow-up popup, a tab switch...
+    /// In test builds the job runs inline on `repo`.
+    pub fn run<T: Send + 'static>(
+        repo: &Repo,
+        label: impl Into<String>,
+        job: impl FnOnce(&Repo) -> T + Send + 'static,
+        then: impl FnOnce(T) -> Action + 'static,
+    ) -> Self {
+        if cfg!(test) {
+            return then(job(repo));
+        }
+        let slot = Arc::new(Mutex::new(None));
+        let out = slot.clone();
+        Action::Spawn(Task {
+            label: label.into(),
+            job: Box::new(move |repo| {
+                let value = job(repo);
+                if let Ok(mut s) = out.lock() {
+                    *s = Some(value);
+                }
+                Ok(String::new())
+            }),
+            silent: false,
+            report: false,
+            then: Some(Box::new(move |_| {
+                match slot.lock().ok().and_then(|mut s| s.take()) {
+                    Some(v) => then(v),
+                    None => Action::None,
+                }
+            })),
+        })
+    }
+
+    /// [`run`](Self::run) for a plain git operation: toast `ok_msg` on success, error otherwise.
+    pub fn run_op<T: Send + 'static>(
+        repo: &Repo,
+        label: impl Into<String>,
+        ok_msg: impl Into<String>,
+        job: impl FnOnce(&Repo) -> anyhow::Result<T> + Send + 'static,
+    ) -> Self {
+        let ok_msg = ok_msg.into();
+        Action::run(repo, label, job, move |r| Action::from_result(r, ok_msg))
     }
 
     /// Ok → toast `ok_msg` + refresh; Err → error + refresh.

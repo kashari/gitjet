@@ -17,7 +17,7 @@ use crate::ctx::Ctx;
 use crate::git::branch::{self, Branch, CheckoutTarget, RemoteSource};
 use crate::git::Repo;
 use crate::ui::popups::{MenuItem, MenuPopup};
-use crate::ui::widgets::{centered, panel};
+use crate::ui::widgets::{centered, dialog};
 use crate::ui::{KeyHelp, Popup};
 
 use super::ops::{done, local_changes_menu};
@@ -216,7 +216,7 @@ impl Popup for RemoteCheckoutPopup {
         let height = (self.steps.len() + self.notes.len()) as u16 + 2;
         let r = centered(area, 76, height);
         f.render_widget(Clear, r);
-        let block = panel(self.title.clone(), true, t);
+        let block = dialog(self.title.clone(), t);
         let inner = block.inner(r);
         f.render_widget(block, r);
         let elapsed = self.started.elapsed();

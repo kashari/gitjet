@@ -676,7 +676,7 @@ impl Popup for FileHistoryPopup {
         let t = &ctx.theme;
         let r = centered_pct(area, 92, 88);
         f.render_widget(Clear, r);
-        let block = panel(format!(" Local history: {} ", self.path), true, t);
+        let block = crate::ui::widgets::dialog(format!(" Local history: {} ", self.path), t);
         let inner = block.inner(r);
         f.render_widget(block, r);
         let [body, keys] =

@@ -26,6 +26,12 @@ use crate::ui::{KeyHelp, Popup, View};
 
 pub const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/// Spinner frame for something running since `since`. Time based, so it turns at the same speed
+/// however often the screen is redrawn.
+pub fn spinner_frame(since: Instant) -> &'static str {
+    SPINNER[(since.elapsed().as_millis() / 100) as usize % SPINNER.len()]
+}
+
 /// Terminals report focus changes often (every Alt+Tab); a refresh this recent makes another redundant.
 const FOCUS_REFRESH_MIN_GAP: Duration = Duration::from_secs(1);
 
@@ -49,6 +55,7 @@ struct TaskDone {
     id: u64,
     label: String,
     silent: bool,
+    report: bool,
     result: Result<String>,
 }
 
@@ -109,7 +116,8 @@ pub struct App {
     head_loader: crate::ui::bg::Background<HeadInfo>,
     tab_hits: Vec<(u16, u16, usize)>,
     last_snapshot: Instant,
-    ticks: usize,
+    /// Reference point for the status-bar spinner.
+    started: Instant,
 }
 
 pub fn run(ctx: Ctx) -> Result<()> {
@@ -164,7 +172,7 @@ impl App {
             head_loader: crate::ui::bg::Background::new(),
             tab_hits: Vec::new(),
             last_snapshot: Instant::now(),
-            ticks: 0,
+            started: Instant::now(),
         };
         if let Some(e) = app.ctx.config.load_error.clone() {
             app.apply(Action::Error(format!("Config error (using defaults): {e}")));
@@ -292,6 +300,7 @@ impl App {
             label,
             job,
             silent,
+            report,
             then,
         } = task;
         if !silent {
@@ -310,6 +319,7 @@ impl App {
                 id,
                 label,
                 silent,
+                report,
                 result,
             });
         });
@@ -325,6 +335,7 @@ impl App {
                 self.running.remove(i);
             }
             match &done.result {
+                _ if !done.report => {}
                 Ok(msg) => {
                     let msg = if msg.trim().is_empty() {
                         format!("{} finished", done.label)
@@ -344,7 +355,6 @@ impl App {
     }
 
     fn tick(&mut self) {
-        self.ticks = self.ticks.wrapping_add(1);
         if let Some(head) = self.head_loader.poll() {
             self.head = head;
         }
@@ -366,6 +376,7 @@ impl App {
                     crate::git::local_history::snapshot_changed(repo, &cfg).map(|n| n.to_string())
                 }),
                 silent: true,
+                report: false,
                 then: None,
             });
         }
@@ -389,6 +400,7 @@ impl App {
                 label: "Write commit-graph".into(),
                 job: Box::new(|repo| repo.ensure_commit_graph().map(|w| w.to_string())),
                 silent: true,
+                report: false,
                 then: None,
             });
         }
@@ -612,27 +624,68 @@ impl App {
         for p in self.popups.iter_mut() {
             p.draw(f, area, &self.ctx);
         }
+        // The status bar paints its row in `selection_bg`; anything else there means a popup
+        // covered it.
+        let covered = !self.popups.is_empty()
+            && f.buffer_mut()[(status.x, status.y)].bg != self.ctx.theme.selection_bg;
+        if covered {
+            self.draw_overlay_status(f, area);
+        }
+    }
+
+    /// Running tasks and loads, e.g. "⠋ Fetch, Loading Log" (empty when idle).
+    fn busy_text(&self) -> String {
+        let mut busy = self.running.clone();
+        if self.views[self.active].loading() {
+            busy.push(format!("Loading {}", self.views[self.active].title()));
+        }
+        if busy.is_empty() {
+            return String::new();
+        }
+        format!("{} {}", spinner_frame(self.started), busy.join(", "))
+    }
+
+    /// Fullscreen popups hide the status bar: repeat its spinner, or else the latest toast, as a
+    /// small badge in the top-right corner so feedback is never invisible.
+    fn draw_overlay_status(&self, f: &mut Frame, area: Rect) {
+        let t = &self.ctx.theme;
+        let busy = self.busy_text();
+        let (text, fg) = if !busy.is_empty() {
+            (busy, t.accent)
+        } else if let Some(toast) = &self.toast {
+            let first = toast.text.lines().next().unwrap_or("").to_string();
+            (first, if toast.error { t.error } else { t.success })
+        } else {
+            return;
+        };
+        let max = (area.width / 2).max(10) as usize;
+        let text = format!(" {} ", crate::util::truncate(&text, max));
+        let w = unicode_width::UnicodeWidthStr::width(text.as_str()) as u16;
+        let r = Rect {
+            x: area.right().saturating_sub(w),
+            y: area.y,
+            width: w.min(area.width),
+            height: 1.min(area.height),
+        };
+        f.render_widget(
+            Paragraph::new(text).style(Style::default().fg(fg).bg(t.selection_bg)),
+            r,
+        );
     }
 
     fn draw_tabs(&mut self, f: &mut Frame, area: Rect) {
         let t = &self.ctx.theme;
-        let mut spans = vec![
-            Span::styled(
-                " gitjet ",
-                Style::default()
-                    .fg(t.accent)
-                    .add_modifier(Modifier::BOLD | Modifier::REVERSED),
-            ),
-            Span::raw(" "),
-        ];
-        let mut x = 9u16;
+        let mut spans = vec![Span::styled(" gitjet ", Style::default().fg(t.accent))];
+        let mut x = 8u16;
         self.tab_hits.clear();
         for (i, v) in self.views.iter().enumerate() {
-            let badge = v.badge().map(|b| format!(" ({b})")).unwrap_or_default();
+            let badge = v.badge().map(|b| format!(" {b}")).unwrap_or_default();
             let label = format!(" {} {}{} ", i + 1, v.title(), badge);
             let w = unicode_width::UnicodeWidthStr::width(label.as_str()) as u16;
             let style = if i == self.active {
-                t.selected().fg(t.accent)
+                Style::default()
+                    .fg(t.accent)
+                    .add_modifier(Modifier::UNDERLINED)
             } else if !badge.is_empty() && i == Tab::Conflicts.index() {
                 Style::default().fg(t.conflict)
             } else {
@@ -648,10 +701,7 @@ impl App {
     fn draw_status(&self, f: &mut Frame, area: Rect) {
         let t = &self.ctx.theme;
         let mut left = vec![
-            Span::styled(
-                format!(" {} ", self.ctx.repo.name()),
-                Style::default().fg(t.fg).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(format!(" {} ", self.ctx.repo.name()), t.text()),
             Span::styled(
                 format!(" {} ", self.head.branch),
                 Style::default().fg(t.local_branch),
@@ -668,7 +718,7 @@ impl App {
                 format!(" {} ", s.label()),
                 Style::default()
                     .fg(t.conflict)
-                    .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                    .add_modifier(Modifier::REVERSED),
             ));
             left.push(Span::raw(" "));
         }
@@ -681,18 +731,9 @@ impl App {
             let first = toast.text.lines().next().unwrap_or("");
             left.push(Span::styled(format!(" {first}"), style));
         }
-        let mut busy = self.running.clone();
-        if self.views[self.active].loading() {
-            busy.push(format!("Loading {}", self.views[self.active].title()));
-        }
-        let right = if busy.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "{} {} ",
-                SPINNER[self.ticks % SPINNER.len()],
-                busy.join(", ")
-            )
+        let right = match self.busy_text() {
+            b if b.is_empty() => b,
+            b => format!("{b} "),
         };
         let rw = unicode_width::UnicodeWidthStr::width(right.as_str()) as u16;
         let [l, r] = Layout::horizontal([Constraint::Min(1), Constraint::Length(rw)]).areas(area);

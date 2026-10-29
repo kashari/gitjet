@@ -20,7 +20,7 @@ use crate::ctx::Ctx;
 use crate::git::branch::{self, Branch};
 use crate::git::Repo;
 use crate::ui::popups::ConfirmPopup;
-use crate::ui::widgets::{centered, panel, TextInput};
+use crate::ui::widgets::{centered, dialog, TextInput};
 use crate::ui::{KeyHelp, Popup};
 
 use super::ops::done;
@@ -276,7 +276,7 @@ impl Popup for NewBranchPopup {
         } else {
             self.start.as_str()
         };
-        let block = panel(format!(" New branch from {from} "), true, t);
+        let block = dialog(format!(" New branch from {from} "), t);
         let inner = block.inner(r);
         f.render_widget(block, r);
         let [label, field, _, cb1, cb2, err, keys] = Layout::vertical([
