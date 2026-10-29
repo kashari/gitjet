@@ -1,6 +1,6 @@
 [package]
 name = "gitjet"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 rust-version = "1.80"
 description = "A keyboard-driven terminal Git client with IDE-grade features: changelists, shelf, partial commits, 3-way merge, interactive rebase, blame, local history and more"
@@ -16,7 +16,6 @@ anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
-portable-pty = "0.9.0"
 ratatui = "0.29"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
@@ -26,7 +25,6 @@ syntect = { version = "5", default-features = false, features = ["default-syntax
 toml = "0.8"
 unicode-width = "0.2"
 ureq = { version = "2", features = ["json"] }
-vt100 = "0.15"
 
 [dev-dependencies]
 tempfile = "3"

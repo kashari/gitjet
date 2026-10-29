@@ -42,8 +42,8 @@ pub enum Action {
     Error(String),
     /// Run work in the background with a spinner.
     Spawn(Task),
-    /// Open a file (optionally at a 1-based line) in the user's editor: in a pane inside gitjet
-    /// for terminal editors, otherwise like `Suspend`.
+    /// Open a file (optionally at a 1-based line) in the built-in editor, or in the configured
+    /// external editor like `Suspend` when `builtin_editor` is off.
     Edit {
         path: PathBuf,
         line: Option<usize>,

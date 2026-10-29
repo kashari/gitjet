@@ -93,8 +93,7 @@ fn quote_editor_path(ed: &str) -> String {
     }
 }
 
-/// Whether `ed` (as returned by [`editor`]) runs in the terminal: it takes `+line` and can be
-/// embedded in a pane.
+/// Whether `ed` (as returned by [`editor`]) runs in the terminal and takes `+line`.
 fn is_terminal_editor(ed: &str) -> bool {
     let base = ed
         .trim_start_matches('"')
@@ -127,59 +126,6 @@ pub fn editor_command(configured: Option<&str>, path: &Path, line: Option<usize>
     } else {
         shell(&format!("{ed} {line_arg}{}", sh_quote(&p)))
     }
-}
-
-/// Program and arguments opening `path` in the user's editor inside a pseudo-terminal, or None
-/// when the editor is not a terminal editor (`code --wait`, notepad...). Windows runs the program
-/// directly: there is no shell between, so paths need no cmd.exe quoting.
-pub fn embedded_editor_argv(
-    configured: Option<&str>,
-    path: &Path,
-    line: Option<usize>,
-) -> Option<Vec<String>> {
-    let ed = editor(configured);
-    if !is_terminal_editor(&ed) {
-        return None;
-    }
-    let p = path.to_string_lossy().into_owned();
-    if cfg!(windows) {
-        let mut argv = split_words(&ed);
-        argv.extend(line_arg(&ed, line));
-        argv.push(p);
-        Some(argv)
-    } else {
-        let line_arg = line_arg(&ed, line)
-            .map(|a| format!("{a} "))
-            .unwrap_or_default();
-        let cmd = format!("{ed} {line_arg}{}", sh_quote(&p));
-        Some(vec!["sh".into(), "-c".into(), cmd])
-    }
-}
-
-/// Split a command line on whitespace; double quotes group words and are removed.
-fn split_words(s: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    let mut cur = String::new();
-    let (mut quoted, mut any) = (false, false);
-    for c in s.chars() {
-        match c {
-            '"' => (quoted, any) = (!quoted, true),
-            c if c.is_whitespace() && !quoted => {
-                if any {
-                    words.push(std::mem::take(&mut cur));
-                    any = false;
-                }
-            }
-            c => {
-                cur.push(c);
-                any = true;
-            }
-        }
-    }
-    if any {
-        words.push(cur);
-    }
-    words
 }
 
 /// "3 minutes ago" style relative time for a unix timestamp.
@@ -275,19 +221,6 @@ mod tests {
             editor_command(Some(&raw), Path::new("a.txt"), Some(7))
         );
         assert!(cmd.contains("+7"), "{cmd}");
-        // Only terminal editors are embedded, and they get the line too.
-        let argv = embedded_editor_argv(Some(&raw), Path::new("a.txt"), Some(7)).unwrap();
-        assert!(argv.join(" ").contains("+7 "), "{argv:?}");
-        assert!(embedded_editor_argv(Some("code --wait"), Path::new("a.txt"), None).is_none());
-    }
-
-    #[test]
-    fn command_words() {
-        assert_eq!(
-            split_words(r#""C:\Program Files\Git\usr\bin\vim.exe" -u NONE"#),
-            [r"C:\Program Files\Git\usr\bin\vim.exe", "-u", "NONE"]
-        );
-        assert_eq!(split_words(r#"  nvim  "" x"#), ["nvim", "", "x"]);
     }
 
     #[test]

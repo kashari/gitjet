@@ -2,8 +2,8 @@
 
 pub mod bg;
 pub mod diff_view;
+pub mod editor;
 pub mod popups;
-pub mod terminal;
 pub mod views;
 pub mod widgets;
 
@@ -72,8 +72,7 @@ pub trait Popup {
     fn help(&self) -> Vec<KeyHelp> {
         Vec::new()
     }
-    /// An embedded terminal program: it gets every key (Ctrl+C too) and is redrawn often, since
-    /// its output arrives on its own.
+    /// Gets every key, Ctrl+C too (the built-in editor, which must not lose unsaved text).
     fn captures_everything(&self) -> bool {
         false
     }

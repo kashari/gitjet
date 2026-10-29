@@ -20,8 +20,8 @@ use ratatui::{DefaultTerminal, Frame};
 use crate::action::{Action, Task};
 use crate::ctx::Ctx;
 use crate::git::{Repo, RepoState};
+use crate::ui::editor::Editor;
 use crate::ui::popups::{MenuItem, MenuPopup, MessagePopup};
-use crate::ui::terminal::TerminalPane;
 use crate::ui::views::{self, Tab};
 use crate::ui::{KeyHelp, Popup, View};
 
@@ -130,8 +130,6 @@ pub struct App {
     last_snapshot: Instant,
     /// Reference point for the status-bar spinner.
     started: Instant,
-    /// Terminal size at the last draw, to size embedded editors before their first draw.
-    screen: Rect,
 }
 
 pub fn run(ctx: Ctx) -> Result<()> {
@@ -187,7 +185,6 @@ impl App {
             tab_hits: Vec::new(),
             last_snapshot: Instant::now(),
             started: Instant::now(),
-            screen: Rect::default(),
         };
         if let Some(e) = app.ctx.config.load_error.clone() {
             app.apply(Action::Error(format!("Config error (using defaults): {e}")));
@@ -202,10 +199,7 @@ impl App {
     fn event_loop(&mut self, terminal: &mut DefaultTerminal, mouse: bool) -> Result<()> {
         loop {
             terminal.draw(|f| self.draw(f))?;
-            // An embedded editor's output arrives on its own: redraw soon enough to feel live.
-            let embedded = self.popups.last().is_some_and(|p| p.captures_everything());
-            let wait = Duration::from_millis(if embedded { 15 } else { 100 });
-            if event::poll(wait)? {
+            if event::poll(Duration::from_millis(100))? {
                 // Drain all queued events before redrawing.
                 loop {
                     match event::read()? {
@@ -314,20 +308,21 @@ impl App {
         }
     }
 
-    /// Terminal editors run in a pane over the main area; others take over the terminal.
+    /// Files open in the built-in editor, or in the configured external one (leaving the TUI).
     fn edit(&mut self, path: &std::path::Path, line: Option<usize>) {
-        let configured = self.ctx.config.editor.clone();
-        let configured = configured.as_deref();
-        let argv = crate::util::embedded_editor_argv(configured, path, line)
-            .filter(|_| self.ctx.config.embedded_editor);
-        if let Some(argv) = argv {
-            match TerminalPane::spawn(&argv, &self.ctx.repo.root, self.screen) {
-                Ok(pane) => return self.apply(Action::popup(pane)),
-                Err(e) => self.apply(Action::Toast(format!("Embedded editor failed ({e:#})"))),
-            }
+        if !self.ctx.config.builtin_editor {
+            let cmd = crate::util::editor_command(self.ctx.config.editor.as_deref(), path, line);
+            return self.apply(Action::Suspend(cmd));
         }
-        let cmd = crate::util::editor_command(configured, path, line);
-        self.apply(Action::Suspend(cmd));
+        let name = path
+            .strip_prefix(&self.ctx.repo.root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        match Editor::open(path.to_path_buf(), line, name, &self.ctx) {
+            Ok(e) => self.apply(Action::popup(e)),
+            Err(e) => self.apply(Action::Error(format!("{e:#}"))),
+        }
     }
 
     fn spawn(&mut self, task: Task) {
@@ -650,7 +645,6 @@ impl App {
 
     fn draw(&mut self, f: &mut Frame) {
         let area = f.area();
-        self.screen = area;
         let [tabs, main, status, hints] = layout(area);
         self.draw_tabs(f, tabs);
         self.views[self.active].draw(f, main, &self.ctx);
