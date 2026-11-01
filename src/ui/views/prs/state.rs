@@ -51,6 +51,22 @@ impl Setup {
     }
 }
 
+/// The repository's current branch and HEAD commit, as last read by a loader thread.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HeadRefs {
+    pub branch: Option<String>,
+    pub commit: Option<String>,
+}
+
+impl HeadRefs {
+    pub fn read(repo: &Repo) -> HeadRefs {
+        HeadRefs {
+            branch: repo.head_branch(),
+            commit: repo.head_commit(),
+        }
+    }
+}
+
 /// Cached details of one request.
 #[derive(Debug, Default)]
 pub struct DetailEntry {
@@ -79,6 +95,9 @@ pub struct Shared {
     /// Bumped whenever `list` changes, so the view knows to copy it.
     pub list_version: u64,
     pub default_branch: Option<String>,
+    /// Current branch and HEAD commit, read by the loader thread for the setup screen's browser
+    /// shortcuts (never on the UI thread: each is a git process).
+    pub head: HeadRefs,
     pub details: HashMap<u64, DetailEntry>,
     /// API client with resolved credentials, and the credential generation it was built at.
     pub conn: Option<(Arc<Connection>, u64)>,
@@ -99,6 +118,7 @@ impl Default for Shared {
             list_gen: 0,
             list_version: 0,
             default_branch: None,
+            head: HeadRefs::default(),
             details: HashMap::new(),
             conn: None,
             auth_source: None,
@@ -172,7 +192,14 @@ pub fn start_list_load(
             detect::clear_cache(&repo);
         }
         let probe = lock(&shared).probe_transport.clone();
+        let head = HeadRefs::read(&repo);
         let detection = hosting::detect(&repo, &cfg, &*probe);
+        {
+            let mut g = lock(&shared);
+            if g.list_gen == gen {
+                g.head = head;
+            }
+        }
         let finish = |setup: Setup, list: Option<Result<Vec<PullRequest>, String>>| {
             let mut g = lock(&shared);
             if g.list_gen != gen {

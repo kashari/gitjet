@@ -1,6 +1,8 @@
 //! Shared pieces of the Local History tab and the per-file popup: the snapshot list, the
 //! "snapshot vs current file" preview, and the actions on a snapshot.
 
+use std::time::Duration;
+
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -11,6 +13,8 @@ use crate::action::Action;
 use crate::ctx::Ctx;
 use crate::git::diff::{DiffOptions, FileDiff};
 use crate::git::local_history::{self, Snapshot};
+use crate::git::Repo;
+use crate::ui::bg::Preview;
 use crate::ui::diff_view::{self, diff_height, draw_diff, DiffSource};
 use crate::ui::popups::{ConfirmPopup, InputPopup};
 use crate::ui::widgets::{move_sel, panel, scroll_to_keep_visible};
@@ -35,16 +39,37 @@ fn key_of(s: &Snapshot) -> SnapKey {
     (s.path.clone(), s.hash.clone(), s.time)
 }
 
-/// A selectable list of snapshots plus a cached diff preview of the selected one.
-#[derive(Default)]
+/// How long the selection must rest on a snapshot before its diff is computed (holding an arrow
+/// key skips the entries passed over).
+const PREVIEW_DELAY: Duration = Duration::from_millis(60);
+
+/// A selectable list of snapshots plus a diff preview of the selected one, computed in the
+/// background (`git diff --no-index` is a process per snapshot).
 pub struct SnapshotPane {
     pub snaps: Vec<Snapshot>,
     pub sel: usize,
     offset: usize,
+    previews: Preview<SnapKey, PreviewContent>,
+    /// Snapshot whose preview is shown (or requested).
     preview_key: Option<SnapKey>,
     preview: Option<PreviewContent>,
     pub diff_scroll: usize,
     diff_page: usize,
+}
+
+impl Default for SnapshotPane {
+    fn default() -> Self {
+        Self {
+            snaps: Vec::new(),
+            sel: 0,
+            offset: 0,
+            previews: Preview::new(PREVIEW_DELAY, 32),
+            preview_key: None,
+            preview: None,
+            diff_scroll: 0,
+            diff_page: 0,
+        }
+    }
 }
 
 impl SnapshotPane {
@@ -62,9 +87,11 @@ impl SnapshotPane {
         self.snaps.get(self.sel)
     }
 
-    /// Forget the cached preview (after a refresh the work-tree file may have changed).
+    /// Forget the cached previews (after a refresh the work-tree file may have changed).
     pub fn invalidate(&mut self) {
+        self.previews.invalidate();
         self.preview_key = None;
+        self.preview = None;
     }
 
     pub fn move_by(&mut self, delta: isize) {
@@ -99,16 +126,38 @@ impl SnapshotPane {
         self.diff_page.max(1) as isize
     }
 
+    /// Request the selected snapshot's preview if the selection changed, and pick it up once it
+    /// has been computed. Markers and deletions need no git and show at once.
     fn ensure_preview(&mut self, ctx: &Ctx) {
         let key = self.selected().map(key_of);
-        if key.is_some() && key == self.preview_key {
-            return;
+        if key != self.preview_key {
+            self.preview_key = key.clone();
+            self.preview = None;
+            if let Some(s) = self.selected().cloned() {
+                if let Some(instant) = instant_preview(&s) {
+                    self.preview = Some(instant);
+                    return;
+                }
+                let opts = DiffOptions::from_config(&ctx.config.diff);
+                self.previews
+                    .request(&ctx.repo, key.expect("selected"), move |repo| {
+                        snapshot_preview(repo, &s, &opts)
+                    });
+            }
         }
-        self.preview = self.selected().map(|s| load_preview(ctx, s));
-        self.preview_key = key;
+        if self.preview.is_none() {
+            if let Some(k) = &self.preview_key {
+                self.preview = self.previews.get(k);
+            }
+        }
     }
 
-    /// The loaded diffs of the selection (for "show full diff").
+    /// True while the selected snapshot's diff is still being computed.
+    pub fn preview_loading(&self) -> bool {
+        self.preview_key.is_some() && self.preview.is_none()
+    }
+
+    /// The loaded diffs of the selection (for "show full diff"), if they have arrived.
     pub fn preview_diffs(&mut self, ctx: &Ctx) -> Option<Vec<FileDiff>> {
         self.ensure_preview(ctx);
         match &self.preview {
@@ -169,6 +218,9 @@ impl SnapshotPane {
         f.render_widget(block, area);
         self.diff_page = inner.height.saturating_sub(1) as usize;
         match &self.preview {
+            None if self.preview_loading() => {
+                f.render_widget(Paragraph::new("Loading…").style(t.dimmed()), inner)
+            }
             None => f.render_widget(Paragraph::new("Select a snapshot").style(t.dimmed()), inner),
             Some(PreviewContent::Message(m)) => {
                 f.render_widget(Paragraph::new(m.as_str()).style(t.dimmed()), inner)
@@ -230,29 +282,42 @@ fn snapshot_line(s: &Snapshot, show_path: bool, width: usize, ctx: &Ctx) -> Line
     Line::from(spans)
 }
 
-/// Compute the preview for one snapshot.
-fn load_preview(ctx: &Ctx, s: &Snapshot) -> PreviewContent {
+/// The preview of a snapshot that needs no git (labels and deletions), or None for a diff.
+fn instant_preview(s: &Snapshot) -> Option<PreviewContent> {
     if s.is_marker() {
-        return PreviewContent::Message(format!(
+        return Some(PreviewContent::Message(format!(
             "Label \"{}\" put {} ({}).\nFiles changed at that moment carry the same label.",
             s.label.as_deref().unwrap_or(""),
             relative_time(s.time),
             format_time(s.time)
+        )));
+    }
+    if s.hash.is_none() {
+        return Some(PreviewContent::Message(
+            "The file was deleted at this point.\nReverting to this entry deletes the current file (its content is saved first).".into(),
         ));
     }
-    let Some(hash) = &s.hash else {
-        return PreviewContent::Message(
-            "The file was deleted at this point.\nReverting to this entry deletes the current file (its content is saved first).".into(),
-        );
-    };
-    match snapshot_diff(ctx, &s.path, hash) {
+    None
+}
+
+/// Compute the preview for one snapshot (background thread).
+fn snapshot_preview(repo: &Repo, s: &Snapshot, opts: &DiffOptions) -> PreviewContent {
+    if let Some(p) = instant_preview(s) {
+        return p;
+    }
+    let hash = s.hash.as_deref().unwrap_or_default();
+    match snapshot_diff(repo, &s.path, hash, opts) {
         Ok(p) => p,
         Err(e) => PreviewContent::Message(format!("Could not load the snapshot: {e:#}")),
     }
 }
 
-fn snapshot_diff(ctx: &Ctx, path: &str, hash: &str) -> anyhow::Result<PreviewContent> {
-    let repo = &ctx.repo;
+fn snapshot_diff(
+    repo: &Repo,
+    path: &str,
+    hash: &str,
+    opts: &DiffOptions,
+) -> anyhow::Result<PreviewContent> {
     let left = local_history::object_path(repo, hash)?;
     if !left.exists() {
         anyhow::bail!("the stored content was pruned");
@@ -264,8 +329,7 @@ fn snapshot_diff(ctx: &Ctx, path: &str, hash: &str) -> anyhow::Result<PreviewCon
     } else {
         local_history::empty_file(repo)?
     };
-    let opts = DiffOptions::from_config(&ctx.config.diff);
-    let mut diffs = repo.diff_files(&left.to_string_lossy(), &right.to_string_lossy(), &opts)?;
+    let mut diffs = repo.diff_files(&left.to_string_lossy(), &right.to_string_lossy(), opts)?;
     for d in diffs.iter_mut() {
         d.old_path = Some(path.to_string());
         d.new_path = Some(path.to_string());
@@ -338,17 +402,36 @@ pub fn snapshot_now_action(ctx: &Ctx) -> Action {
     })
 }
 
-/// Full-screen diff of the selected snapshot vs the current file.
+/// Full-screen diff of the selected snapshot vs the current file. Uses the computed preview when
+/// it has arrived; otherwise the diff viewer loads the two files itself (in the background).
 pub fn full_diff_action(pane: &mut SnapshotPane, ctx: &Ctx) -> Action {
     let Some(s) = pane.selected().cloned() else {
         return Action::None;
     };
+    let title = format!("{} — snapshot {} vs current", s.path, format_time(s.time));
+    if instant_preview(&s).is_some() {
+        return Action::Toast("Nothing to compare for this entry".into());
+    }
     match pane.preview_diffs(ctx) {
-        Some(d) if !d.is_empty() => diff_view::open(
-            format!("{} — snapshot {} vs current", s.path, format_time(s.time)),
-            DiffSource::Raw(d),
-        ),
+        Some(d) if !d.is_empty() => diff_view::open(title, DiffSource::Raw(d)),
         Some(_) => Action::Toast("The snapshot is identical to the current file".into()),
-        None => Action::Toast("Nothing to compare for this entry".into()),
+        None => {
+            let repo = &ctx.repo;
+            let hash = s.hash.as_deref().unwrap_or_default();
+            let left = match local_history::object_path(repo, hash) {
+                Ok(p) if p.exists() => p,
+                _ => return Action::Error("The stored content was pruned".into()),
+            };
+            let current = repo.path(&s.path);
+            let right = if current.is_file() {
+                current
+            } else {
+                match local_history::empty_file(repo) {
+                    Ok(p) => p,
+                    Err(e) => return Action::Error(format!("{e:#}")),
+                }
+            };
+            diff_view::open(title, DiffSource::Files { left, right })
+        }
     }
 }
