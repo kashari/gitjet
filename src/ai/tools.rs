@@ -6,8 +6,9 @@
 //! real refs, paths and commits before anything runs.
 //!
 //! One call can stand for a whole flow: `merge` with `push` is fetch, checkout, merge, push. The
-//! model only fills in the call; `plan` expands it into steps the user confirms. Version numbers
-//! (releases, hotfixes) and default branches come from Rust and config, never from the model.
+//! model only fills in the call; `plan` expands it into steps the user confirms. A release or
+//! hotfix is a `new_branch` named `release/x.x.x` or `hotfix/x.x.x(.N)`; the plan then sets that
+//! version in the project's version file and commits it.
 
 use schemars::generate::SchemaSettings;
 use schemars::JsonSchema;
@@ -58,33 +59,6 @@ pub struct NewBranchArgs {
     pub from: Option<String>,
 }
 
-/// Create the next release branch.
-#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CreateReleaseArgs {
-    /// Branch to cut the release from; omit for the team's usual release source
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
-    /// True when the user also asks to push the new branch
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub push: bool,
-}
-
-/// Create the next hotfix branch.
-#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CreateHotfixArgs {
-    /// Branch to start the hotfix from; omit for the production branch
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
-    /// True when the user says the fix is urgent or an emergency
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub urgent: bool,
-    /// True when the user also asks to push the new branch
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub push: bool,
-}
-
 /// Merge a branch, tag or commit into a branch.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -115,6 +89,9 @@ pub struct CherryPickArgs {
     /// Only commits by this author ("me" for the current user)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    /// Words from the commit message, as the user quoted them
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     /// Branch to put the commits on; omit for the current branch
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onto: Option<String>,
@@ -212,8 +189,6 @@ pub struct UnsupportedArgs {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToolCall {
     NewBranch(NewBranchArgs),
-    CreateRelease(CreateReleaseArgs),
-    CreateHotfix(CreateHotfixArgs),
     Merge(MergeArgs),
     CherryPick(CherryPickArgs),
     ResolveConflicts(ResolveConflictsArgs),
@@ -294,20 +269,6 @@ pub const TOOLS: &[ToolDef] = &[
         ToolCall::NewBranch
     ),
     tool!(
-        "create_release",
-        "Create the next release branch; gitjet works out the version number.",
-        Risk::Undoable,
-        CreateReleaseArgs,
-        ToolCall::CreateRelease
-    ),
-    tool!(
-        "create_hotfix",
-        "Create the next hotfix branch; gitjet works out the version number.",
-        Risk::Undoable,
-        CreateHotfixArgs,
-        ToolCall::CreateHotfix
-    ),
-    tool!(
         "merge",
         "Merge a branch, tag or commit into a branch (default: the current branch).",
         Risk::Undoable,
@@ -316,7 +277,7 @@ pub const TOOLS: &[ToolDef] = &[
     ),
     tool!(
         "cherry_pick",
-        "Copy commits from one branch onto another, by hash or picked from a list.",
+        "Copy commits onto a branch: by hash, by author and message words, or from a list.",
         Risk::Undoable,
         CherryPickArgs,
         ToolCall::CherryPick
@@ -487,12 +448,18 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_call("create_hotfix", json!({"urgent": true})).unwrap(),
-            ToolCall::CreateHotfix(CreateHotfixArgs {
-                urgent: true,
+            parse_call(
+                "cherry_pick",
+                json!({"author": "me", "message": "fix login"})
+            )
+            .unwrap(),
+            ToolCall::CherryPick(CherryPickArgs {
+                author: Some("me".into()),
+                message: Some("fix login".into()),
                 ..Default::default()
             })
         );
+        assert!(parse_call("create_release", json!({})).is_err());
         assert_eq!(
             parse_call("pull", json!({"branch": "deploy/prod"})).unwrap(),
             ToolCall::Pull(PullArgs {
@@ -508,10 +475,6 @@ mod tests {
     #[test]
     fn defaults_are_left_out() {
         // Training rows omit defaulted arguments; serializing a call must do the same.
-        let v = serde_json::to_value(CreateHotfixArgs::default()).unwrap();
-        assert_eq!(v, json!({}));
-        let v = serde_json::to_value(CreateReleaseArgs::default()).unwrap();
-        assert_eq!(v, json!({}));
         let v = serde_json::to_value(CherryPickArgs::default()).unwrap();
         assert_eq!(v, json!({}));
     }
