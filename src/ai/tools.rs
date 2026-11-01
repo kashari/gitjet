@@ -147,10 +147,14 @@ pub struct SwitchArgs {
 #[serde(deny_unknown_fields)]
 pub struct FetchArgs {}
 
-/// Pull the current branch from its remote.
+/// Pull a branch from its remote.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PullArgs {}
+pub struct PullArgs {
+    /// Branch to update; omit for the current branch
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+}
 
 /// Push a branch to its remote. Never a force push.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
@@ -340,7 +344,7 @@ pub const TOOLS: &[ToolDef] = &[
     ),
     tool!(
         "pull",
-        "Pull the current branch from its remote.",
+        "Pull a branch from its remote (default: the current branch).",
         Risk::Undoable,
         PullArgs,
         ToolCall::Pull
@@ -490,8 +494,10 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_call("pull", json!({})).unwrap(),
-            ToolCall::Pull(PullArgs {})
+            parse_call("pull", json!({"branch": "deploy/prod"})).unwrap(),
+            ToolCall::Pull(PullArgs {
+                branch: Some("deploy/prod".into())
+            })
         );
         assert!(parse_call("merge", json!({"into": "main"})).is_err());
         assert!(parse_call("merge", json!({"source": "x", "bogus": 1})).is_err());
