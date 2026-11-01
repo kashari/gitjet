@@ -1,4 +1,6 @@
 mod action;
+#[allow(dead_code)] // the runtime half (parse, resolve, run) lands with the `ai` feature
+mod ai;
 mod app;
 mod config;
 mod ctx;
@@ -37,6 +39,13 @@ enum Cmd {
     ConfigPath,
     /// Write a config file with all default settings (if none exists)
     ConfigInit,
+    /// Print the AI tool registry as JSON (for the training pipeline)
+    #[command(hide = true)]
+    DumpTools {
+        /// Print only the registry hash
+        #[arg(long)]
+        hash: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -59,6 +68,14 @@ fn main() -> Result<()> {
     let start = match cli.command {
         Some(Cmd::ConfigPath) => {
             println!("{}", config::Config::path().display());
+            return Ok(());
+        }
+        Some(Cmd::DumpTools { hash }) => {
+            if hash {
+                println!("{}", ai::tools::registry_hash());
+            } else {
+                println!("{}", serde_json::to_string_pretty(&ai::tools::dump())?);
+            }
             return Ok(());
         }
         Some(Cmd::ConfigInit) => {
