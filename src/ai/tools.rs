@@ -41,6 +41,19 @@ pub enum MergeModeArg {
     FfOnly,
 }
 
+// What a merge does if it conflicts; absent means stop and open the Conflicts tab. Plain
+// comments, not doc comments: doc comments turn the enum into a long `oneOf` in the schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OnConflictArg {
+    // Undo the merge and leave the branch as it was.
+    Abort,
+    // Take our side where the branches conflict (`-X ours`); clean changes from both are kept.
+    Ours,
+    // Take their side where the branches conflict (`-X theirs`).
+    Theirs,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SideArg {
@@ -71,6 +84,9 @@ pub struct MergeArgs {
     /// Merge strategy; omit for git's default
     #[serde(default)]
     pub mode: MergeModeArg,
+    /// If it conflicts: "abort" (cancel, reject), "theirs" or "ours" (take that side); omit to stop and resolve by hand
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_conflict: Option<OnConflictArg>,
     /// True when the user also asks to push the result
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub push: bool,
@@ -229,11 +245,29 @@ fn schema<T: JsonSchema>() -> Value {
     v
 }
 
-/// `Option<String>` comes out as `"type": ["string", "null"]`. Optional is already expressed by
-/// leaving the field out of `required`, so keep just the real type.
+/// `Option<String>` comes out as `"type": ["string", "null"]`, and `Option<Enum>` as
+/// `"anyOf": [{enum}, {"type": "null"}]`. Optional is already expressed by leaving the field out
+/// of `required`, so keep just the real type.
 fn drop_null_types(v: &mut Value) {
     match v {
         Value::Object(o) => {
+            if let Some(Value::Array(any)) = o.get("anyOf") {
+                let real: Vec<Value> = any
+                    .iter()
+                    .filter(|s| s.get("type") != Some(&Value::from("null")))
+                    .cloned()
+                    .collect();
+                if let [Value::Object(inner)] = real.as_slice() {
+                    let inner = inner.clone();
+                    o.remove("anyOf");
+                    for (k, val) in inner {
+                        o.entry(k).or_insert(val);
+                    }
+                }
+            }
+            if let Some(Value::Array(values)) = o.get_mut("enum") {
+                values.retain(|e| !e.is_null());
+            }
             if let Some(Value::Array(types)) = o.get("type") {
                 let real: Vec<Value> = types.iter().filter(|t| *t != "null").cloned().collect();
                 if real.len() == 1 {
@@ -430,9 +464,23 @@ mod tests {
                 source: "fix login".into(),
                 into: Some("main".into()),
                 mode: MergeModeArg::NoFf,
+                on_conflict: None,
                 push: true,
             })
         );
+        let call = parse_call(
+            "merge",
+            json!({"source": "origin/develop", "into": "deploy/uat", "on_conflict": "theirs"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            call,
+            ToolCall::Merge(MergeArgs {
+                on_conflict: Some(OnConflictArg::Theirs),
+                ..
+            })
+        ));
+        assert!(parse_call("merge", json!({"source": "x", "on_conflict": "skip"})).is_err());
         let call = parse_call(
             "cherry_pick",
             json!({"from": "develop", "author": "me", "onto": "deploy/uat"}),
@@ -483,7 +531,7 @@ mod tests {
     fn schemas_are_flat() {
         let text = serde_json::to_string(&dump()).unwrap();
         assert!(!text.contains("$ref") && !text.contains("$defs"), "{text}");
-        assert!(!text.contains("\"null\""), "{text}");
+        assert!(!text.contains("null"), "{text}");
     }
 
     #[test]
