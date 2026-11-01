@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Risk {
-    /// Reads only (log, stats). Runs without asking.
+    /// Reads only, or only updates remote-tracking refs (log, fetch). Runs without asking.
     Read,
     /// Changes the repo but the reflog can undo it (checkout, merge, cherry-pick).
     Undoable,
@@ -142,6 +142,11 @@ pub struct SwitchArgs {
     pub branch: String,
 }
 
+/// Fetch all remotes. Updates remote-tracking branches only.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FetchArgs {}
+
 /// Pull the current branch from its remote.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -209,6 +214,7 @@ pub enum ToolCall {
     CherryPick(CherryPickArgs),
     ResolveConflicts(ResolveConflictsArgs),
     Switch(SwitchArgs),
+    Fetch(FetchArgs),
     Pull(PullArgs),
     Push(PushArgs),
     FindCommits(FindCommitsArgs),
@@ -324,6 +330,13 @@ pub const TOOLS: &[ToolDef] = &[
         Risk::Undoable,
         SwitchArgs,
         ToolCall::Switch
+    ),
+    tool!(
+        "fetch",
+        "Fetch all remotes; your own branches don't change.",
+        Risk::Read,
+        FetchArgs,
+        ToolCall::Fetch
     ),
     tool!(
         "pull",
