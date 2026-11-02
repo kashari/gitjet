@@ -22,6 +22,8 @@ use self::browser::{
 use crate::action::Action;
 use crate::ctx::Ctx;
 use crate::git::local_history::{self, HistoryFile, Snapshot};
+use crate::git::Repo;
+use crate::ui::bg::Background;
 use crate::ui::popups::{InputPopup, MenuItem, MenuPopup};
 use crate::ui::views::Tab;
 use crate::ui::widgets::{centered_pct, move_sel, panel, scroll_to_keep_visible, TextInput};
@@ -36,12 +38,27 @@ enum Focus {
     Diff,
 }
 
+/// What a (re)load reads off the UI thread: the index can hold thousands of entries.
+struct Loaded {
+    files: Vec<HistoryFile>,
+    all: Vec<Snapshot>,
+    stamp: Option<(u64, SystemTime)>,
+}
+
+fn load_index(repo: &Repo) -> Result<Loaded, String> {
+    let stamp = local_history::index_stamp(repo);
+    let all = local_history::all_snapshots(repo).map_err(|e| format!("{e:#}"))?;
+    let files = local_history::list_files(repo).map_err(|e| format!("{e:#}"))?;
+    Ok(Loaded { files, all, stamp })
+}
+
 pub struct LocalHistoryView {
     files: Vec<HistoryFile>,
     /// Whole index, newest first
     all: Vec<Snapshot>,
     stamp: Option<(u64, SystemTime)>,
     loaded: bool,
+    loader: Background<Result<Loaded, String>>,
     file_sel: usize,
     file_offset: usize,
     filter: TextInput,
@@ -74,6 +91,7 @@ impl LocalHistoryView {
             all: Vec::new(),
             stamp: None,
             loaded: false,
+            loader: Background::new(),
             file_sel: 0,
             file_offset: 0,
             filter: TextInput::default(),
@@ -103,24 +121,30 @@ impl LocalHistoryView {
         }
     }
 
-    /// Read the index (unless unchanged since the last load) keeping the selected file.
+    /// Start reading the index in the background (unless unchanged since the last load).
     fn load(&mut self, ctx: &Ctx) {
-        let stamp = local_history::index_stamp(&ctx.repo);
-        if self.loaded && stamp == self.stamp {
+        if self.loaded && local_history::index_stamp(&ctx.repo) == self.stamp {
             return;
         }
+        self.loader.start(&ctx.repo, load_index);
+        self.apply_loaded();
+    }
+
+    /// Apply a finished load, keeping the selected file.
+    fn apply_loaded(&mut self) {
+        let Some(res) = self.loader.poll() else {
+            return;
+        };
         let keep = self.selected_file().map(|f| f.path.clone());
-        match local_history::all_snapshots(&ctx.repo)
-            .and_then(|all| Ok((local_history::list_files(&ctx.repo)?, all)))
-        {
-            Ok((files, all)) => {
-                self.files = files;
-                self.all = all;
+        match res {
+            Ok(l) => {
+                self.files = l.files;
+                self.all = l.all;
+                self.stamp = l.stamp;
                 self.error = None;
             }
-            Err(e) => self.error = Some(format!("{e:#}")),
+            Err(e) => self.error = Some(e),
         }
-        self.stamp = stamp;
         self.loaded = true;
         if let Some(p) = keep {
             if let Some(pos) = self
@@ -333,7 +357,9 @@ impl LocalHistoryView {
         let [filter_area, list] = filter_layout(inner, self.filtering || !self.filter.is_empty());
         self.draw_filter(f, filter_area, ctx);
         if vis.is_empty() {
-            let msg = if self.files.is_empty() {
+            let msg = if !self.loaded {
+                "Loading…"
+            } else if self.files.is_empty() {
                 "No local history yet.\nChanged files are snapshotted automatically;\npress s to snapshot now."
             } else {
                 "No files match the filter"
@@ -402,11 +428,20 @@ impl View for LocalHistoryView {
         Ok(())
     }
 
+    fn poll(&mut self, _ctx: &Ctx) {
+        self.apply_loaded();
+    }
+
+    fn loading(&self) -> bool {
+        self.loader.busy()
+    }
+
     fn draw(&mut self, f: &mut Frame, area: Rect, ctx: &Ctx) {
         if self.toggle_requested.take() {
             self.toggle_timeline();
         }
         self.reload_if_changed(ctx);
+        self.apply_loaded();
         let t = &ctx.theme;
         if let Some(e) = &self.error {
             let block = panel(" Local History ", true, t);
@@ -787,6 +822,7 @@ mod tests {
             files: Vec::new(),
             all: Vec::new(),
             stamp: None,
+            loader: Background::new(),
             loaded: true,
             file_sel: 0,
             file_offset: 0,

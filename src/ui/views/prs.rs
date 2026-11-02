@@ -49,6 +49,8 @@ enum Pane {
 pub struct PrsView {
     shared: SharedRef,
     setup: Setup,
+    /// Branch / HEAD for the setup screen, copied from the loader thread.
+    head: state::HeadRefs,
     auth_source: Option<String>,
     prs: Vec<PullRequest>,
     /// Indices into `prs` matching the search.
@@ -83,6 +85,7 @@ impl PrsView {
         Self {
             shared,
             setup: Setup::Detecting,
+            head: state::HeadRefs::default(),
             auth_source: None,
             prs: Vec::new(),
             visible: Vec::new(),
@@ -113,6 +116,7 @@ impl PrsView {
         let changed = {
             let g = lock(&self.shared);
             self.setup = g.setup.clone();
+            self.head = g.head.clone();
             self.auth_source = g.auth_source.clone();
             self.loading = g.list_loading;
             self.default_branch = g.default_branch.clone();
@@ -556,12 +560,10 @@ impl PrsView {
         let block = panel(format!(" {} ", self.title()), true, &ctx.theme);
         let inner = block.inner(area);
         f.render_widget(block, area);
-        let branch = ctx.repo.head_branch();
-        let head = ctx.repo.head_commit();
         let lines = render::setup_lines(
             &self.setup,
-            branch.as_deref(),
-            head.as_deref(),
+            self.head.branch.as_deref(),
+            self.head.commit.as_deref(),
             self.started,
             &ctx.theme,
         );

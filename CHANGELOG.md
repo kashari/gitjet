@@ -7,6 +7,60 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-11-01
+
+This release merges the performance work and features from the fork at kashari/gitjet
+(0.1.2 to 0.1.8, listed below) into the main repository, and fixes the two tabs that still
+blocked the screen.
+
+### Changed
+
+- Pull Requests tab: the setup screen no longer runs git on every redraw (two git processes per
+  frame, 50–150 ms each on Windows). The current branch and commit come from the background
+  loader.
+- Local History tab: the snapshot-vs-current diff is computed in the background once the
+  selection rests, and the history index is read off the screen thread. Opening the tab or
+  moving through snapshots no longer waits for git.
+- Measured with Windows-like git cost (+100 ms per call) on a repository with 20,000 commits and
+  1,601 local plus 1,601 remote branches: every key press and tab switch now responds within
+  2 ms (previously up to 1,037 ms when opening the Branches tab).
+- The release workflow publishes only when every platform built; a failed build no longer
+  produces a release with missing downloads.
+
+## [0.1.8] - 2026-10-29
+
+### Added
+
+- Built-in Vim-style editor that works the same on every platform: normal, insert and visual
+  modes, motions, operators and text objects, registers, undo/redo, `.` repeat, search, and the
+  common `:` commands (`:w`, `:q`, `:wq`, `:x`, `:e!`, `:%s`, `:g`, `:v`, `:sort`, `:normal`,
+  `:set`). `builtin_editor = false` uses `$EDITOR` instead. It replaces the embedded terminal
+  editor of 0.1.7; `embedded_editor` is no longer used.
+
+## [0.1.7] - 2026-10-29
+
+### Added
+
+- Terminal editors (vim, nvim, nano...) ran in a pane inside gitjet through a pseudo-terminal
+  (ConPTY on Windows) instead of leaving the screen. Superseded by the built-in editor in 0.1.8.
+
+## [0.1.6] - 2026-10-29
+
+### Fixed
+
+- Launching editors with quoted paths on Windows (cmd.exe received `\"` escapes).
+
+## [0.1.5] - 2026-10-29
+
+### Changed
+
+- Background git operations with spinners for every dialog (checkout, merge, rebase, rename,
+  delete, upstream, push), and a status badge over fullscreen popups so feedback is never
+  hidden.
+- Lighter look: top-rule panes, no decorative bold.
+- Windows: editor paths with spaces are quoted, and the vim of Git for Windows is the default
+  editor when installed.
+
 ## [0.1.4] - 2026-10-28
 
 ### Changed
@@ -208,8 +262,13 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/kashari/gitjet/compare/v0.1.4...HEAD
-[0.1.4]: https://github.com/kashari/gitjet/compare/v0.1.2...v0.1.4
-[0.1.2]: https://github.com/kashari/gitjet/compare/v0.1.1...v0.1.2
+[Unreleased]: https://github.com/klajdishark/gitjet/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/klajdishark/gitjet/compare/v0.1.1...v0.1.9
+[0.1.8]: https://github.com/kashari/gitjet/releases/tag/v0.1.8
+[0.1.7]: https://github.com/kashari/gitjet/releases/tag/v0.1.7
+[0.1.6]: https://github.com/kashari/gitjet/releases/tag/v0.1.6
+[0.1.5]: https://github.com/kashari/gitjet/releases/tag/v0.1.5
+[0.1.4]: https://github.com/kashari/gitjet/releases/tag/v0.1.4
+[0.1.2]: https://github.com/kashari/gitjet/releases/tag/v0.1.2
 [0.1.1]: https://github.com/klajdishark/gitjet/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/klajdishark/gitjet/releases/tag/v0.1.0
