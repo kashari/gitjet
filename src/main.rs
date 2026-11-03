@@ -46,11 +46,14 @@ enum Cmd {
         #[arg(long)]
         hash: bool,
     },
-    /// Show which git action the built-in AI model picks for a request (runs nothing)
+    /// Do a git task you describe in words, after showing the plan and asking you
     #[cfg(feature = "ai")]
     Ask {
         /// What you'd say, e.g. "merge develop into uat and push"
         request: Vec<String>,
+        /// Only show the plan; run nothing
+        #[arg(long, short = 'n')]
+        dry_run: bool,
         /// Score the model on the built-in golden requests instead
         #[arg(long)]
         golden: bool,
@@ -88,7 +91,11 @@ fn main() -> Result<()> {
             return Ok(());
         }
         #[cfg(feature = "ai")]
-        Some(Cmd::Ask { request, golden }) => return ask(&request.join(" "), golden),
+        Some(Cmd::Ask {
+            request,
+            dry_run,
+            golden,
+        }) => return ask(cli.path, &request.join(" "), dry_run, golden),
         Some(Cmd::ConfigInit) => {
             let path = config::Config::write_default()?;
             println!("{}", path.display());
@@ -130,21 +137,29 @@ fn main() -> Result<()> {
 }
 
 #[cfg(feature = "ai")]
-fn ask(request: &str, golden: bool) -> Result<()> {
+fn ask(path: Option<PathBuf>, request: &str, dry_run: bool, golden: bool) -> Result<()> {
     use std::time::Instant;
+    if !golden && request.trim().is_empty() {
+        bail!("usage: gitjet ask <request>");
+    }
+    // Check the repository before spending seconds on the model.
+    let repo = if golden {
+        None
+    } else {
+        Some(git::Repo::discover(
+            &path.unwrap_or_else(|| PathBuf::from(".")),
+        )?)
+    };
     let t = Instant::now();
     let engine = ai::model::Engine::load()?;
     let mut session = engine.session()?;
     eprintln!("model ready in {:.1}s", t.elapsed().as_secs_f32());
-    if !golden {
-        if request.trim().is_empty() {
-            bail!("usage: gitjet ask <request>");
-        }
+    if let Some(repo) = repo {
         let t = Instant::now();
         let (name, args) = session.ask(request)?;
-        println!("{name} {args}");
-        eprintln!("({:.2}s)", t.elapsed().as_secs_f32());
-        return Ok(());
+        eprintln!("model: {name} {args} ({:.2}s)", t.elapsed().as_secs_f32());
+        let call = ai::tools::parse_call(&name, args)?;
+        return run_request(&repo, &call, dry_run);
     }
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("ai/testdata/golden_prompts.json"))?;
@@ -178,4 +193,71 @@ fn ask(request: &str, golden: bool) -> Result<()> {
         t.elapsed().as_secs_f32() / n as f32
     );
     Ok(())
+}
+
+/// Show the plan for the model's call, ask as strongly as the plan needs, then run it.
+#[cfg(feature = "ai")]
+fn run_request(repo: &git::Repo, call: &ai::tools::ToolCall, dry_run: bool) -> Result<()> {
+    use std::io::{BufRead, IsTerminal, Write};
+
+    use ai::plan::{self, Answer, Confirm};
+
+    let config = config::Config::load();
+    let settings = plan::Settings {
+        pull: git::remote::PullMode::from_config(&config.update.method),
+        prune: config.update.prune,
+    };
+    if plan::wants_fetch(call) && !git::remote::remotes(repo).unwrap_or_default().is_empty() {
+        eprintln!("fetching...");
+        if let Err(e) = git::remote::fetch_all(repo, settings.prune) {
+            eprintln!("fetch failed, using what was fetched before: {e:#}");
+        }
+    }
+    let plan = match plan::build(repo, call, &settings) {
+        Ok(Answer::Say(text)) => {
+            println!("{text}");
+            return Ok(());
+        }
+        Ok(Answer::Plan(p)) => p,
+        Err(e) => bail!("{e:#}\nNothing was changed."),
+    };
+    for note in &plan.notes {
+        println!("  ({note})");
+    }
+    println!("Plan:");
+    for (i, step) in plan.steps.iter().enumerate() {
+        println!("  {}. {}", i + 1, step.describe());
+    }
+    if dry_run {
+        println!("(dry run: nothing was changed)");
+        return Ok(());
+    }
+    let prompt = match &plan.confirm {
+        Confirm::No => None,
+        Confirm::Yes => Some(("Run it? [y/N] ".to_string(), None)),
+        Confirm::Type(b) => Some((format!("This pushes to {b}. Type {b} to run it: "), Some(b))),
+    };
+    if let Some((text, must_type)) = prompt {
+        if !std::io::stdin().is_terminal() {
+            bail!("not run: confirming needs a terminal");
+        }
+        print!("{text}");
+        std::io::stdout().flush()?;
+        let mut line = String::new();
+        std::io::stdin().lock().read_line(&mut line)?;
+        let line = line.trim();
+        let yes = match must_type {
+            Some(b) => line == b.as_str(),
+            None => matches!(line, "y" | "Y" | "yes"),
+        };
+        if !yes {
+            println!("Cancelled; nothing was changed.");
+            return Ok(());
+        }
+    }
+    let n = plan.steps.len();
+    plan.run(repo, &settings, |i, _step, r| match r {
+        Ok(msg) => println!("  {}/{n} ok: {msg}", i + 1),
+        Err(_) => println!("  {}/{n} FAILED", i + 1),
+    })
 }

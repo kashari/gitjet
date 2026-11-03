@@ -118,10 +118,10 @@ impl Session<'_> {
             bail!("request too long");
         }
         decode(&mut self.ctx, &turn, self.prefix_len)?;
-        let mut pos = self.prefix_len + turn.len();
+        let start = self.prefix_len + turn.len();
         let mut sampler = LlamaSampler::greedy();
         let mut out = Vec::new();
-        for _ in 0..MAX_NEW_TOKENS {
+        for pos in (start..).take(MAX_NEW_TOKENS) {
             let token = sampler.sample(&self.ctx, -1);
             if vocab.is_eog(token) {
                 break;
@@ -131,7 +131,6 @@ impl Session<'_> {
                 break;
             }
             decode(&mut self.ctx, &[token], pos)?;
-            pos += 1;
         }
         Ok(String::from_utf8_lossy(&out).into_owned())
     }
