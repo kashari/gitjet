@@ -46,6 +46,15 @@ enum Cmd {
         #[arg(long)]
         hash: bool,
     },
+    /// Show which git action the built-in AI model picks for a request (runs nothing)
+    #[cfg(feature = "ai")]
+    Ask {
+        /// What you'd say, e.g. "merge develop into uat and push"
+        request: Vec<String>,
+        /// Score the model on the built-in golden requests instead
+        #[arg(long)]
+        golden: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -78,6 +87,8 @@ fn main() -> Result<()> {
             }
             return Ok(());
         }
+        #[cfg(feature = "ai")]
+        Some(Cmd::Ask { request, golden }) => return ask(&request.join(" "), golden),
         Some(Cmd::ConfigInit) => {
             let path = config::Config::write_default()?;
             println!("{}", path.display());
@@ -116,4 +127,55 @@ fn main() -> Result<()> {
     let repo = git::Repo::discover(&start)?;
     let config = config::Config::load();
     app::run(ctx::Ctx::new(repo, config))
+}
+
+#[cfg(feature = "ai")]
+fn ask(request: &str, golden: bool) -> Result<()> {
+    use std::time::Instant;
+    let t = Instant::now();
+    let engine = ai::model::Engine::load()?;
+    let mut session = engine.session()?;
+    eprintln!("model ready in {:.1}s", t.elapsed().as_secs_f32());
+    if !golden {
+        if request.trim().is_empty() {
+            bail!("usage: gitjet ask <request>");
+        }
+        let t = Instant::now();
+        let (name, args) = session.ask(request)?;
+        println!("{name} {args}");
+        eprintln!("({:.2}s)", t.elapsed().as_secs_f32());
+        return Ok(());
+    }
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("ai/testdata/golden_prompts.json"))?;
+    let cases = fixture["cases"].as_array().cloned().unwrap_or_default();
+    let (mut exact, mut tool) = (0, 0);
+    let t = Instant::now();
+    for case in &cases {
+        let req = case["request"].as_str().unwrap_or_default();
+        let (want_name, want) =
+            ai::call::parse_raw(case["completion"].as_str().unwrap_or_default())?;
+        let got = session.generate(req)?;
+        let got = ai::call::parse_raw(&got).map_err(|_| got);
+        let free_text = matches!(want_name.as_str(), "clarify" | "unsupported");
+        match &got {
+            Ok((n, a)) if *n == want_name && (free_text || *a == want) => {
+                exact += 1;
+                tool += 1;
+            }
+            other => {
+                if matches!(other, Ok((n, _)) if *n == want_name) {
+                    tool += 1;
+                }
+                println!("- {req:?}\n    want {want_name} {want}\n    got  {other:?}");
+            }
+        }
+    }
+    let n = cases.len();
+    println!(
+        "\ngolden: {exact}/{n} exact ({:.1}%), {tool}/{n} right tool, {:.2}s per request",
+        100.0 * exact as f32 / n as f32,
+        t.elapsed().as_secs_f32() / n as f32
+    );
+    Ok(())
 }
