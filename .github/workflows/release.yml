@@ -104,7 +104,10 @@ jobs:
       - name: Smoke test
         if: "!contains(matrix.target, 'x86_64-apple')"
         shell: bash
-        run: target/${{ matrix.target }}/release/gitjet ask "merge develop into uat and push"
+        # The model must load and answer; -n runs nothing in the checkout.
+        run: |
+          target/${{ matrix.target }}/release/gitjet ask -n "fetch all remotes" 2>&1 | tee ask.txt
+          grep -q "^model: fetch" ask.txt
       - name: Package (zip)
         if: matrix.archive == 'zip'
         shell: pwsh
