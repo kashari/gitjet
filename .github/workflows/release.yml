@@ -96,7 +96,8 @@ jobs:
         run: |
           name="$(basename "${{ vars.GITJET_MODEL_URL }}")"
           curl -fsSL -o "$RUNNER_TEMP/$name" "${{ vars.GITJET_MODEL_URL }}"
-          got=$( (sha256sum "$RUNNER_TEMP/$name" 2>/dev/null || shasum -a 256 "$RUNNER_TEMP/$name") | cut -d' ' -f1)
+          # Hash from stdin: on Windows, sha256sum escapes the backslashed path and prefixes the hash with "\".
+          got=$( (sha256sum 2>/dev/null || shasum -a 256) < "$RUNNER_TEMP/$name" | cut -d' ' -f1)
           test "$got" = "${{ vars.GITJET_MODEL_SHA256 }}" || { echo "model checksum mismatch: $got"; exit 1; }
           echo "GITJET_MODEL=$RUNNER_TEMP/$name" >> "$GITHUB_ENV"
       - name: Build
