@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Result};
 
 use crate::git::remote::{self, PushSpec};
-use crate::git::{pick, Repo, RepoState};
+use crate::git::{pick, upkeep, Repo, RepoState};
 
 /// Options shared by `pick` and `revert`.
 pub struct Common {
@@ -47,20 +47,28 @@ impl Common {
         Ok(pick::parse_revs(&text))
     }
 
-    /// Ask before changing anything, unless `--yes`. A list piped in leaves no terminal to ask on.
     fn confirm(&self, question: &str) -> Result<bool> {
-        if self.yes {
-            return Ok(true);
-        }
-        if !std::io::stdin().is_terminal() {
-            bail!("not run: pass --yes to run without asking (there is no terminal to ask on)");
-        }
-        print!("{question} [y/N] ");
-        std::io::stdout().flush()?;
-        let mut line = String::new();
-        std::io::stdin().lock().read_line(&mut line)?;
-        Ok(matches!(line.trim(), "y" | "Y" | "yes"))
+        ask(self.yes, question)
     }
+}
+
+/// Ask before changing anything, unless `--yes`. A list piped in leaves no terminal to ask on.
+fn ask(yes: bool, question: &str) -> Result<bool> {
+    if yes {
+        return Ok(true);
+    }
+    if !std::io::stdin().is_terminal() {
+        bail!("not run: pass --yes to run without asking (there is no terminal to ask on)");
+    }
+    print!("{question} [y/N] ");
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    Ok(matches!(line.trim(), "y" | "Y" | "yes"))
+}
+
+fn open(path: Option<&Path>) -> Result<Repo> {
+    Repo::discover(path.unwrap_or(Path::new(".")))
 }
 
 /// What to tell someone at a shell when an operation stopped half-way.
@@ -156,5 +164,119 @@ pub fn revert(c: &Common) -> Result<()> {
     if c.push {
         push(&repo, repo.head_branch().as_deref())?;
     }
+    Ok(())
+}
+
+/// `gitjet sync`: fetch, then fast-forward every local branch that is only behind.
+pub fn sync(path: Option<&Path>, fetch: bool) -> Result<()> {
+    let repo = open(path)?;
+    let prune = crate::config::Config::load().update.prune;
+    println!("{}", upkeep::sync_branches(&repo, fetch, prune)?.describe());
+    Ok(())
+}
+
+/// `gitjet cleanup`: delete local branches that are merged or whose remote branch is gone.
+pub fn cleanup(path: Option<&Path>, gone: bool, dry_run: bool, yes: bool) -> Result<()> {
+    let repo = open(path)?;
+    let (base, stale) = upkeep::stale_branches(&repo)?;
+    if stale.is_empty() {
+        println!(
+            "Nothing to clean up: no local branch is merged into {base} or lost its remote branch."
+        );
+        return Ok(());
+    }
+    let (delete, keep): (Vec<_>, Vec<_>) = stale.into_iter().partition(|s| s.merged || gone);
+    if !delete.is_empty() {
+        println!("Delete:");
+        for s in &delete {
+            println!("  {}", s.describe());
+        }
+    }
+    if !keep.is_empty() {
+        println!(
+            "Kept, because they have commits that are not in {base} (--gone deletes them too):"
+        );
+        for s in &keep {
+            println!("  {}", s.describe());
+        }
+    }
+    if dry_run {
+        println!("(dry run: nothing was changed)");
+        return Ok(());
+    }
+    if delete.is_empty() {
+        return Ok(());
+    }
+    let n = delete.len();
+    let question = format!("Delete {n} branch{}?", if n == 1 { "" } else { "es" });
+    if !ask(yes, &question)? {
+        println!("Cancelled; nothing was changed.");
+        return Ok(());
+    }
+    println!("{}", upkeep::delete_stale(&repo, &delete, gone)?);
+    Ok(())
+}
+
+/// `gitjet undo`: move the current branch back to before one of its last operations.
+pub fn undo(path: Option<&Path>, steps: usize, list: bool, dry_run: bool, yes: bool) -> Result<()> {
+    let repo = open(path)?;
+    let points = upkeep::undo_points(&repo, steps.max(10))?;
+    if points.is_empty() {
+        bail!("there is nothing to undo on this branch");
+    }
+    if list {
+        for (i, p) in points.iter().enumerate() {
+            println!(
+                "{:>3}  {}  ({})",
+                i + 1,
+                p.what,
+                crate::util::relative_time(p.when)
+            );
+        }
+        println!("`gitjet undo <n>` goes back to before operation n.");
+        return Ok(());
+    }
+    let Some(point) = points.get(steps.max(1) - 1) else {
+        bail!("only {} operations are known for this branch", points.len());
+    };
+    let branch = repo
+        .head_branch()
+        .unwrap_or_else(|| "the detached HEAD".into());
+    println!(
+        "Move {branch} back to {} (before: {}).",
+        &point.target[..point.target.len().min(8)],
+        point.what
+    );
+    println!("Uncommitted changes are kept. Running `gitjet undo` again brings this state back.");
+    if dry_run {
+        println!("(dry run: nothing was changed)");
+        return Ok(());
+    }
+    if !ask(yes, "Undo?")? {
+        println!("Cancelled; nothing was changed.");
+        return Ok(());
+    }
+    println!("{}", upkeep::undo_to(&repo, point)?);
+    Ok(())
+}
+
+/// `gitjet fixup <hash>`: fold the staged changes into an earlier commit.
+pub fn fixup(path: Option<&Path>, rev: &str, yes: bool) -> Result<()> {
+    let repo = open(path)?;
+    let commit = repo
+        .rev_parse(rev)
+        .and_then(|id| repo.commit_info(&id))
+        .map_err(|_| anyhow::anyhow!("{rev} is not a commit in this repository"))?;
+    println!(
+        "Fold the staged changes into {} {}.",
+        commit.short,
+        crate::util::truncate(&commit.subject, 60)
+    );
+    println!("This rewrites that commit and every commit after it.");
+    if !ask(yes, "Fix up?")? {
+        println!("Cancelled; nothing was changed.");
+        return Ok(());
+    }
+    println!("{}", upkeep::fixup_into(&repo, &commit.id)?);
     Ok(())
 }

@@ -27,6 +27,7 @@ pub mod rebase;
 pub mod remote;
 pub mod shelf;
 pub mod stash;
+pub mod upkeep;
 
 use std::ffi::OsString;
 use std::io::Write;

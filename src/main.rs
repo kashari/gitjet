@@ -61,6 +61,47 @@ enum Cmd {
         #[arg(long, short = 'y')]
         yes: bool,
     },
+    /// Fetch, then fast-forward every local branch that is only behind its upstream
+    Sync {
+        /// Do not fetch first; use what was fetched before
+        #[arg(long)]
+        no_fetch: bool,
+    },
+    /// Delete local branches that are merged into the main branch
+    Cleanup {
+        /// Also delete branches whose remote branch is gone but that have unmerged commits
+        #[arg(long)]
+        gone: bool,
+        /// Only show what would be deleted
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Do not ask before deleting
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// Move the current branch back to before its last operation (merge, commit, reset, rebase...)
+    Undo {
+        /// Go back to before the n-th last operation (see --list)
+        #[arg(default_value_t = 1)]
+        steps: usize,
+        /// List the last operations instead
+        #[arg(long, short = 'l')]
+        list: bool,
+        /// Only show what would be done
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Do not ask before running
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// Fold the staged changes into an earlier commit of the current branch
+    Fixup {
+        /// The commit that should contain the staged changes
+        rev: String,
+        /// Do not ask before running
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
     /// Revert commits by hash on the current branch, newest first
     Revert {
         /// Commit hashes, in any order; read from standard input when none are given
@@ -167,6 +208,17 @@ fn main() -> Result<()> {
             };
             return cli::revert(&common);
         }
+        Some(Cmd::Sync { no_fetch }) => return cli::sync(cli.path.as_deref(), !no_fetch),
+        Some(Cmd::Cleanup { gone, dry_run, yes }) => {
+            return cli::cleanup(cli.path.as_deref(), gone, dry_run, yes)
+        }
+        Some(Cmd::Undo {
+            steps,
+            list,
+            dry_run,
+            yes,
+        }) => return cli::undo(cli.path.as_deref(), steps, list, dry_run, yes),
+        Some(Cmd::Fixup { rev, yes }) => return cli::fixup(cli.path.as_deref(), &rev, yes),
         Some(Cmd::ConfigInit) => {
             let path = config::Config::write_default()?;
             println!("{}", path.display());
