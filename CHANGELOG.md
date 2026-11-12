@@ -7,6 +7,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The Log is much faster in large repositories.** Measured on a repository with 150,000
+  commits, 300 branches and tags, and no commit-graph file:
+  - First page: 982 ms → 19 ms. Commits are now listed in date order (newest first, branches
+    interleaved) instead of `--topo-order`, for which git walks the whole history before it
+    prints anything. `order = "topo"` under `[log]` brings the old order back. Histories whose
+    commit dates are out of order switch to topological order by themselves.
+  - Scrolling through 20 pages: 19.7 s → 0.12 s. gitjet keeps one `git log` running and reads
+    the next page from it; before, every page started a new walk from the top.
+  - Changing a filter while a slow search (`-S`) is still running stops that search instead of
+    letting it run to the end.
+- The screen is drawn only when something changed instead of ten times a second. CPU use of an
+  idle gitjet (180×50 terminal): Changes tab 0.8 % → 0.4 %, Log tab 2.7 % → 0.6 %.
+- Results of background loads (tab data, previews, details) appear within 10 ms of being ready
+  instead of up to 100 ms.
+- Fewer git processes, which matters most on Windows where each one costs 50-150 ms: the
+  current branch is read from `.git/HEAD` (startup runs 3 git commands instead of 5), and the
+  Log reads the user name and email in one call.
+
+### Added
+
+- `gitjet __bench [dir]` (hidden): times the loads behind the slowest screens without the
+  terminal, to compare a change before and after on the same repository.
+
 ## [0.2.0] - 2026-11-03
 
 ### Added

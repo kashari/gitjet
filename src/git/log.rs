@@ -1,5 +1,10 @@
 //! Commit history queries.
 
+use std::io::{BufRead, BufReader, Read};
+use std::process::{Child, ChildStdout, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
 use anyhow::Result;
 
 use super::Repo;
@@ -77,52 +82,161 @@ impl Default for LogQuery {
 const FORMAT: &str =
     "--format=%H%x00%h%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%s%x00%D%x1e";
 
+fn log_args(q: &LogQuery, max: Option<usize>) -> Vec<String> {
+    let mut args: Vec<String> = vec!["log".into(), FORMAT.into(), "--decorate=full".into()];
+    if let Some(max) = max {
+        args.push(format!("--max-count={max}"));
+    }
+    if q.skip > 0 || max.is_some() {
+        args.push(format!("--skip={}", q.skip));
+    }
+    if q.topo {
+        args.push("--topo-order".into());
+    }
+    if q.all {
+        // Every branch, remote and tag, but not stash internals.
+        args.push("--exclude=refs/stash".into());
+        args.push("--all".into());
+    }
+    if let Some(a) = &q.author {
+        args.push(format!("--author={a}"));
+        args.push("--regexp-ignore-case".into());
+    }
+    if let Some(g) = &q.grep {
+        args.push(format!("--grep={g}"));
+        args.push("--regexp-ignore-case".into());
+    }
+    if let Some(s) = &q.pickaxe {
+        args.push(format!("-S{s}"));
+    }
+    if let Some(s) = &q.since {
+        args.push(format!("--since={s}"));
+    }
+    if let Some(u) = &q.until {
+        args.push(format!("--until={u}"));
+    }
+    if q.follow && q.paths.len() == 1 {
+        args.push("--follow".into());
+    }
+    if q.first_parent {
+        args.push("--first-parent".into());
+    }
+    if q.no_merges {
+        args.push("--no-merges".into());
+    }
+    args.extend(q.revs.iter().cloned());
+    args.push("--".into());
+    args.extend(q.paths.iter().cloned());
+    args
+}
+
+/// A running `git log`, read one page at a time. Dropping it stops git.
+pub struct LogStream {
+    child: Arc<Mutex<Child>>,
+    out: BufReader<ChildStdout>,
+    stderr: Option<std::thread::JoinHandle<String>>,
+    args: Vec<String>,
+    started: Instant,
+    /// Commits read so far
+    read: usize,
+    done: bool,
+    empty_ok: Option<Repo>,
+}
+
+/// Stops the `git log` of a [`LogStream`] from another thread (a read in progress then ends).
+#[derive(Clone)]
+pub struct LogStop(Arc<Mutex<Child>>);
+
+impl LogStop {
+    pub fn stop(&self) {
+        if let Ok(mut c) = self.0.lock() {
+            let _ = c.kill();
+        }
+    }
+}
+
+impl LogStream {
+    pub fn stopper(&self) -> LogStop {
+        LogStop(self.child.clone())
+    }
+
+    /// True once git has no more commits to give.
+    pub fn done(&self) -> bool {
+        self.done
+    }
+
+    /// The next `n` commits; fewer (or none) means the history ends there.
+    pub fn next_page(&mut self, n: usize) -> Result<Vec<Commit>> {
+        let mut commits = Vec::with_capacity(n.min(4096));
+        let mut rec = Vec::new();
+        while !self.done && commits.len() < n {
+            rec.clear();
+            if self.out.read_until(0x1e, &mut rec)? == 0 {
+                self.finish()?;
+                break;
+            }
+            if rec.last() == Some(&0x1e) {
+                rec.pop();
+            }
+            if let Some(c) = parse_record(&String::from_utf8_lossy(&rec)) {
+                commits.push(c);
+            }
+        }
+        self.read += commits.len();
+        Ok(commits)
+    }
+
+    /// git closed its output: collect the exit status and what it wrote to stderr.
+    fn finish(&mut self) -> Result<()> {
+        self.done = true;
+        let status = self
+            .child
+            .lock()
+            .map_err(|_| anyhow::anyhow!("git log: lock poisoned"))?
+            .wait()?;
+        let stderr = self
+            .stderr
+            .take()
+            .and_then(|h| h.join().ok())
+            .unwrap_or_default();
+        let refs: Vec<&str> = self.args.iter().map(String::as_str).collect();
+        super::trace(&refs, self.started);
+        if status.success() {
+            return Ok(());
+        }
+        if self.read == 0
+            && self
+                .empty_ok
+                .as_ref()
+                .is_some_and(|repo| repo.head_commit().is_none())
+        {
+            return Ok(());
+        }
+        let out = std::process::Output {
+            status,
+            stdout: Vec::new(),
+            stderr: stderr.into_bytes(),
+        };
+        super::check(&out, &refs, &[0])
+    }
+}
+
+impl Drop for LogStream {
+    fn drop(&mut self) {
+        if !self.done {
+            if let Ok(mut c) = self.child.lock() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            let refs: Vec<&str> = self.args.iter().map(String::as_str).collect();
+            super::trace(&refs, self.started);
+        }
+    }
+}
+
 impl Repo {
     pub fn log(&self, q: &LogQuery) -> Result<Vec<Commit>> {
-        let mut args: Vec<String> = vec![
-            "log".into(),
-            FORMAT.into(),
-            "--decorate=full".into(),
-            format!("--max-count={}", q.max),
-            format!("--skip={}", q.skip),
-        ];
-        if q.topo {
-            args.push("--topo-order".into());
-        }
-        if q.all {
-            // Every branch, remote and tag, but not stash internals.
-            args.push("--exclude=refs/stash".into());
-            args.push("--all".into());
-        }
-        if let Some(a) = &q.author {
-            args.push(format!("--author={a}"));
-            args.push("--regexp-ignore-case".into());
-        }
-        if let Some(g) = &q.grep {
-            args.push(format!("--grep={g}"));
-            args.push("--regexp-ignore-case".into());
-        }
-        if let Some(s) = &q.pickaxe {
-            args.push(format!("-S{s}"));
-        }
-        if let Some(s) = &q.since {
-            args.push(format!("--since={s}"));
-        }
-        if let Some(u) = &q.until {
-            args.push(format!("--until={u}"));
-        }
-        if q.follow && q.paths.len() == 1 {
-            args.push("--follow".into());
-        }
-        if q.first_parent {
-            args.push("--first-parent".into());
-        }
-        if q.no_merges {
-            args.push("--no-merges".into());
-        }
-        args.extend(q.revs.iter().cloned());
-        args.push("--".into());
-        args.extend(q.paths.iter().cloned());
+        let args = log_args(q, Some(q.max));
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
         match self.run(&refs) {
             Ok(out) => Ok(parse_log(&out)),
@@ -130,6 +244,39 @@ impl Repo {
             Err(_) if q.revs.is_empty() && self.head_commit().is_none() => Ok(Vec::new()),
             Err(e) => Err(e),
         }
+    }
+
+    /// Start `git log` for `q` (from `q.skip`, without a limit) and read it page by page with
+    /// [`LogStream::next_page`]. Paging with `--skip` would walk the history again for every
+    /// page, which costs about a second per page in a large repository.
+    pub fn log_stream(&self, q: &LogQuery) -> Result<LogStream> {
+        let args = log_args(q, None);
+        let mut c = self.command();
+        c.args(&args).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let started = Instant::now();
+        let mut child = c.spawn().map_err(|e| {
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            super::spawn_error(e, &refs)
+        })?;
+        let out = BufReader::with_capacity(64 * 1024, child.stdout.take().expect("piped stdout"));
+        let mut err = child.stderr.take().expect("piped stderr");
+        // Drained on its own thread so a long error message can't block git while we read stdout.
+        let stderr = std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = err.read_to_string(&mut text);
+            text
+        });
+        Ok(LogStream {
+            child: Arc::new(Mutex::new(child)),
+            out,
+            stderr: Some(stderr),
+            args,
+            started,
+            read: 0,
+            done: false,
+            // An empty repository has no HEAD to walk: that failure means "no commits".
+            empty_ok: q.revs.is_empty().then(|| self.clone()),
+        })
     }
 
     /// A single commit's metadata.
@@ -193,36 +340,37 @@ pub fn short_ref(r: &str) -> String {
 }
 
 pub fn parse_log(out: &str) -> Vec<Commit> {
-    out.split('\x1e')
-        .filter_map(|rec| {
-            let rec = rec.trim_start_matches(['\n', '\r']);
-            if rec.is_empty() {
-                return None;
-            }
-            let f: Vec<&str> = rec.split('\0').collect();
-            if f.len() < 11 {
-                return None;
-            }
-            Some(Commit {
-                id: f[0].to_string(),
-                short: f[1].to_string(),
-                parents: f[2].split_whitespace().map(str::to_string).collect(),
-                author: f[3].to_string(),
-                email: f[4].to_string(),
-                time: f[5].parse().unwrap_or(0),
-                committer: f[6].to_string(),
-                committer_email: f[7].to_string(),
-                commit_time: f[8].parse().unwrap_or(0),
-                subject: f[9].to_string(),
-                refs: f[10]
-                    .split(", ")
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(short_ref)
-                    .collect(),
-            })
-        })
-        .collect()
+    out.split('\x1e').filter_map(parse_record).collect()
+}
+
+/// One `FORMAT` record (without its `\x1e` terminator).
+fn parse_record(rec: &str) -> Option<Commit> {
+    let rec = rec.trim_start_matches(['\n', '\r']);
+    if rec.is_empty() {
+        return None;
+    }
+    let f: Vec<&str> = rec.split('\0').collect();
+    if f.len() < 11 {
+        return None;
+    }
+    Some(Commit {
+        id: f[0].to_string(),
+        short: f[1].to_string(),
+        parents: f[2].split_whitespace().map(str::to_string).collect(),
+        author: f[3].to_string(),
+        email: f[4].to_string(),
+        time: f[5].parse().unwrap_or(0),
+        committer: f[6].to_string(),
+        committer_email: f[7].to_string(),
+        commit_time: f[8].parse().unwrap_or(0),
+        subject: f[9].to_string(),
+        refs: f[10]
+            .split(", ")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(short_ref)
+            .collect(),
+    })
 }
 
 #[cfg(test)]
@@ -282,5 +430,58 @@ mod tests {
         let log = repo.log(&q).unwrap();
         assert_eq!(log.len(), 1);
         assert!(log.iter().all(|c| !c.subject.contains("wip")));
+    }
+
+    #[test]
+    fn stream_reads_pages_in_order_and_ends() {
+        let (_d, repo) = temp_repo();
+        for i in 0..7 {
+            commit_files(&repo, &[("a.txt", &format!("{i}\n"))], &format!("c{i}"));
+        }
+        let all = repo.log(&LogQuery::default()).unwrap();
+        let mut s = repo.log_stream(&LogQuery::default()).unwrap();
+        let mut got = s.next_page(3).unwrap();
+        assert_eq!(got.len(), 3);
+        assert!(!s.done());
+        got.extend(s.next_page(3).unwrap());
+        let last = s.next_page(3).unwrap();
+        assert_eq!(last.len(), 1, "a short page is the end");
+        got.extend(last);
+        assert!(s.done());
+        assert!(s.next_page(3).unwrap().is_empty());
+        assert_eq!(got, all);
+
+        // From an offset, as after an idle stream was closed.
+        let q = LogQuery {
+            skip: 5,
+            ..LogQuery::default()
+        };
+        let mut s = repo.log_stream(&q).unwrap();
+        assert_eq!(s.next_page(10).unwrap(), all[5..]);
+    }
+
+    #[test]
+    fn stream_empty_repository_and_bad_revision() {
+        let (_d, repo) = temp_repo();
+        let mut s = repo.log_stream(&LogQuery::default()).unwrap();
+        assert!(s.next_page(5).unwrap().is_empty());
+        commit_files(&repo, &[("a.txt", "1\n")], "first");
+        let q = LogQuery {
+            revs: vec!["no-such-branch".into()],
+            ..LogQuery::default()
+        };
+        let err = repo.log_stream(&q).unwrap().next_page(5).unwrap_err();
+        assert!(format!("{err:#}").contains("no-such-branch"), "{err:#}");
+    }
+
+    #[test]
+    fn stopped_stream_ends_instead_of_hanging() {
+        let (_d, repo) = temp_repo();
+        commit_files(&repo, &[("a.txt", "1\n")], "first");
+        let mut s = repo.log_stream(&LogQuery::default()).unwrap();
+        s.stopper().stop();
+        // Killed before or after it wrote its one commit: either way the read returns.
+        let _ = s.next_page(5);
+        assert!(s.done() || s.next_page(5).is_ok());
     }
 }

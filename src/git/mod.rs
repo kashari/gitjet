@@ -228,6 +228,23 @@ impl Repo {
 
     /// Current branch name, or None when HEAD is detached.
     pub fn head_branch(&self) -> Option<String> {
+        // `HEAD` is a file: "ref: refs/heads/<branch>" on a branch, a hash when detached. Reading
+        // it saves a git process on every refresh (50-150 ms each on Windows). Anything else
+        // (the reftable format keeps a placeholder there) is left to git.
+        if let Ok(text) = std::fs::read_to_string(self.git_dir.join("HEAD")) {
+            let text = text.trim();
+            match text.strip_prefix("ref:").map(str::trim) {
+                Some(r) => {
+                    if let Some(b) = r.strip_prefix("refs/heads/").filter(|b| *b != ".invalid") {
+                        return Some(b.to_string());
+                    }
+                }
+                None if text.len() >= 40 && text.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                    return None;
+                }
+                None => {}
+            }
+        }
         self.try_run(&["symbolic-ref", "--short", "-q", "HEAD"])
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
@@ -244,6 +261,25 @@ impl Repo {
         self.try_run(&["config", "--get", key])
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
+    }
+
+    /// `user.name` and `user.email` in one git call; the name falls back to the email. `None`
+    /// without an email.
+    pub fn user_identity(&self) -> Option<(String, String)> {
+        let out = self.try_run(&["config", "--get-regexp", r"^user\.(name|email)$"])?;
+        let (mut name, mut email) = (None, None);
+        // Later lines win, as with `git config --get`.
+        for line in out.lines() {
+            match line.split_once(' ') {
+                Some(("user.name", v)) if !v.trim().is_empty() => name = Some(v.trim().to_string()),
+                Some(("user.email", v)) if !v.trim().is_empty() => {
+                    email = Some(v.trim().to_string())
+                }
+                _ => {}
+            }
+        }
+        let email = email?;
+        Some((name.unwrap_or_else(|| email.clone()), email))
     }
 
     /// True when git's commit-graph file exists (single file or split chain).
@@ -433,6 +469,38 @@ mod tests {
         let sub = repo.root.join("nested");
         std::fs::create_dir_all(&sub).unwrap();
         assert_eq!(Repo::discover(&sub).unwrap().root, repo.root);
+    }
+
+    #[test]
+    fn user_identity_reads_name_and_email() {
+        let (_d, repo) = temp_repo();
+        let name = repo.config_get("user.name").unwrap();
+        let email = repo.config_get("user.email").unwrap();
+        assert_eq!(repo.user_identity(), Some((name, email.clone())));
+        repo.run(&["config", "user.name", "Two Words"]).unwrap();
+        assert_eq!(repo.user_identity(), Some(("Two Words".to_string(), email)));
+    }
+
+    #[test]
+    fn head_branch_on_a_branch_detached_unborn_and_in_a_worktree() {
+        let (_d, repo) = temp_repo();
+        assert_eq!(repo.head_branch().as_deref(), Some("main"), "unborn");
+        let first = commit_files(&repo, &[("a.txt", "1\n")], "first");
+        repo.run(&["checkout", "-q", "-b", "feature/with/slashes"])
+            .unwrap();
+        assert_eq!(repo.head_branch().as_deref(), Some("feature/with/slashes"));
+        repo.run(&["checkout", "-q", "--detach", &first]).unwrap();
+        assert_eq!(repo.head_branch(), None, "detached");
+
+        // A linked worktree has its own HEAD.
+        let wt = repo.root.parent().unwrap().join("wt-head-branch");
+        repo.run(&["worktree", "add", "-q", "-b", "other", wt.to_str().unwrap()])
+            .unwrap();
+        let linked = Repo::discover(&wt).unwrap();
+        assert_eq!(linked.head_branch().as_deref(), Some("other"));
+        assert_eq!(repo.head_branch(), None);
+        repo.run(&["worktree", "remove", "--force", wt.to_str().unwrap()])
+            .unwrap();
     }
 
     #[test]

@@ -10,10 +10,51 @@
 //!
 //! In test builds jobs run inline, so tests can call `refresh()` and assert right away.
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use crate::git::Repo;
+
+static PENDING: AtomicUsize = AtomicUsize::new(0);
+static FINISHED: AtomicBool = AtomicBool::new(false);
+
+/// Held while background work is under way whose result the screen is waiting for. The event
+/// loop checks for results often while any is held, and redraws when one is dropped; with none
+/// held it sleeps and does not redraw.
+pub struct Busy(());
+
+/// Mark background work as started; drop the value after its result is where the UI reads it.
+pub fn busy() -> Busy {
+    PENDING.fetch_add(1, Ordering::SeqCst);
+    Busy(())
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        PENDING.fetch_sub(1, Ordering::SeqCst);
+        FINISHED.store(true, Ordering::SeqCst);
+    }
+}
+
+/// True while any background work is running.
+pub fn pending() -> bool {
+    PENDING.load(Ordering::SeqCst) > 0
+}
+
+/// True once after background work finished (the screen may have something new to show).
+pub fn take_finished() -> bool {
+    FINISHED.swap(false, Ordering::SeqCst)
+}
+
+/// `std::thread::spawn` for work the screen waits for (see [`Busy`]).
+pub fn spawn<R>(f: impl FnOnce() -> R + Send + 'static) {
+    let busy = busy();
+    std::thread::spawn(move || {
+        let _busy = busy;
+        f();
+    });
+}
 
 type Slot<T> = Arc<Mutex<Option<(u64, T)>>>;
 
@@ -58,7 +99,7 @@ impl<T: Send + 'static> Background<T> {
         if cfg!(test) {
             run();
         } else {
-            std::thread::spawn(run);
+            spawn(run);
         }
     }
 
@@ -81,7 +122,7 @@ impl<T: Send + 'static> Background<T> {
     }
 }
 
-type Job<T> = Box<dyn FnOnce() -> T + Send>;
+type Job<T> = Box<dyn FnOnce() -> (T, Busy) + Send>;
 
 struct PreviewState<K, T> {
     pending: Option<(u64, K, Job<T>)>,
@@ -151,9 +192,12 @@ impl<K: Clone + PartialEq + Send + 'static, T: Clone + Send + 'static> Preview<K
         self.generation += 1;
         self.requested = Some(key.clone());
         let repo = repo.clone();
-        let job: Job<T> = Box::new(move || job(&repo));
+        // Busy from the request (the wait for the selection to settle counts) until the value is
+        // stored; a request that is replaced before it ran drops its marker with the closure.
+        let busy = busy();
+        let job: Job<T> = Box::new(move || (job(&repo), busy));
         if cfg!(test) {
-            let value = job();
+            let (value, _busy) = job();
             self.requested = None;
             self.store(key, value);
             return;
@@ -245,10 +289,11 @@ fn preview_worker<K: Send, T: Send>(shared: Arc<PreviewShared<K, T>>, delay: Dur
             continue;
         };
         drop(s);
-        let value = job();
+        let (value, busy) = job();
         if let Ok(mut s) = shared.state.lock() {
             s.done.push((g, key, value));
         }
+        drop(busy);
     }
 }
 

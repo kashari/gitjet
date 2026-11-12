@@ -139,7 +139,7 @@ impl DetailsLoader {
         }
         self.running = Some(id.to_string());
         let (repo, id, tx) = (repo.clone(), id.to_string(), self.tx.clone());
-        std::thread::spawn(move || {
+        crate::ui::bg::spawn(move || {
             let _ = tx.send(Details::load(&repo, &id));
         });
     }

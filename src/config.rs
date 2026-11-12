@@ -69,6 +69,10 @@ pub struct LogConfig {
     pub page_size: usize,
     /// Show all branches (like `--all`) instead of only HEAD
     pub all_branches: bool,
+    /// "date": newest commits first, branches interleaved; the first page appears at once.
+    /// "topo": the commits of each branch stay together (`git log --topo-order`); git has to
+    /// walk the whole history before it shows the first commit, which is slow in large repositories.
+    pub order: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +212,7 @@ impl Default for LogConfig {
         Self {
             page_size: 500,
             all_branches: true,
+            order: "date".into(),
         }
     }
 }

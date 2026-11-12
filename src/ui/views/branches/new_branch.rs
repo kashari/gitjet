@@ -136,7 +136,7 @@ impl NewBranchPopup {
         if cfg!(test) {
             work();
         } else {
-            std::thread::spawn(work);
+            crate::ui::bg::spawn(work);
         }
         self.job = Some(Job {
             rx,

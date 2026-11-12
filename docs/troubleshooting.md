@@ -236,6 +236,9 @@ the pane show that data is on its way. If loading itself takes long:
 - The Log loads commits in pages (`log.page_size`, default 500) and loads more as you scroll. Use
   filters (`f`), or `a` to show only `HEAD` instead of all branches, to reduce what is loaded.
   Set `all_branches = false` under `[log]` to make that the default.
+- If the Log takes a second or more to show its first commits, check that `order` under `[log]`
+  is `"date"` (the default) and that `.git/gitjet/log-topo-order` does not exist. See
+  [Log](log.md#order).
 - Network operations run in the background; you can keep working while they run.
 - Local history only looks at changed files and files Git already tracks, at most 5000 per
   snapshot, and skips files larger than `local_history.max_file_kb`. Increase

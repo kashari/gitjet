@@ -182,6 +182,7 @@ command = "cargo test"
 [log]
 page_size = 500
 all_branches = true
+order = "date"            # or "topo": one branch after the other (slower to start)
 
 [local_history]
 enabled = true

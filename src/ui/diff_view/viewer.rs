@@ -187,7 +187,7 @@ impl DiffViewer {
         let repo = ctx.repo.clone();
         let source = self.source.clone();
         let opts = self.effective_opts();
-        std::thread::spawn(move || {
+        crate::ui::bg::spawn(move || {
             let _ = tx.send(source.load(&repo, &opts));
         });
         self.rx = Some(rx);

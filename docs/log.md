@@ -50,6 +50,26 @@ Commits load in pages of `log.page_size` commits (default 500, allowed range 50 
 the selection gets within 50 commits of the end of the loaded list, the next page loads
 automatically. A refresh reloads as many commits as are loaded, up to 20000.
 
+gitjet keeps one `git log` running for the current filters and reads each next page from it, so
+scrolling down does not walk the history again. A `git log` that has not been read from for
+30 seconds is closed; the next page then starts a new one where it stopped.
+
+### Order
+
+Commits are listed newest first, with the branches interleaved by commit date (`order = "date"`
+under `[log]`). The first page appears at once, also in repositories with hundreds of thousands
+of commits.
+
+Set `order = "topo"` to keep the commits of each branch together instead
+(`git log --topo-order`). Git then has to walk every branch and tag to the bottom before it
+shows the first commit, which takes about a second per 150,000 commits.
+
+The graph needs every commit listed before its parents. Date order does that unless commit
+dates are out of order (a commit dated before its parent, for example from an imported history
+or a wrong clock). gitjet checks each page; when it finds such a commit it loads the list again
+in topological order, keeps your selection, and uses topological order for that repository from
+then on (remembered in `.git/gitjet/log-topo-order`; delete the file to try date order again).
+
 By default the log shows all branches, remote branches and tags (`git log --all`, without the
 stash). Set `log.all_branches = false` to start with only `HEAD`. Press `a` to switch between the
 two at any time. See [Configuration](configuration.md).

@@ -72,7 +72,7 @@ impl RemoteCheckoutPopup {
         if cfg!(test) {
             work();
         } else {
-            std::thread::spawn(work);
+            crate::ui::bg::spawn(work);
         }
         let name = if branch.is_remote() {
             branch.short_name().to_string()

@@ -542,7 +542,7 @@ impl PrDiffPopup {
     ) -> Self {
         let slot: DiffSlot = Arc::default();
         let out = slot.clone();
-        std::thread::spawn(move || {
+        crate::ui::bg::spawn(move || {
             let r = job(&repo).map_err(|e| format!("{e:#}"));
             *out.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
         });

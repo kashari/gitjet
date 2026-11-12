@@ -30,7 +30,7 @@ impl<T: Send + 'static> Loader<T> {
     ) -> Self {
         let (tx, rx) = channel();
         let repo = repo.clone();
-        std::thread::spawn(move || {
+        crate::ui::bg::spawn(move || {
             let _ = tx.send(job(&repo));
         });
         Self { rx: Some(rx) }

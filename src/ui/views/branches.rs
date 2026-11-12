@@ -327,7 +327,7 @@ impl BranchesView {
         d.vs_due = None;
         let (tx, rx) = mpsc::channel();
         let repo = ctx.repo.clone();
-        std::thread::spawn(move || {
+        crate::ui::bg::spawn(move || {
             // The receiver is gone when the selection moved on; nothing to report then.
             let _ = tx.send(branch::ahead_behind(&repo, &full, "HEAD").ok());
         });

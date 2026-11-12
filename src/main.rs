@@ -2,6 +2,7 @@ mod action;
 #[allow(dead_code)] // the runtime half (parse, resolve, run) lands with the `ai` feature
 mod ai;
 mod app;
+mod bench;
 mod config;
 mod ctx;
 mod git;
@@ -72,6 +73,9 @@ fn main() -> Result<()> {
             };
             std::fs::copy(src, dst).with_context(|| format!("copying {src} to {dst}"))?;
             return Ok(());
+        }
+        Some(bench::ARG) => {
+            return bench::run(std::path::Path::new(raw.get(2).map_or(".", String::as_str)));
         }
         _ => {}
     }

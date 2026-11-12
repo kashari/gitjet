@@ -61,6 +61,7 @@ enabled = true
 [log]
 page_size = 500
 all_branches = true
+order = "date"
 
 [local_history]
 enabled = true
@@ -201,6 +202,7 @@ command handle that itself, for example with a script in the repository.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `page_size` | integer | `500` | Commits loaded at a time in the Log. The next page loads automatically as you scroll near the end. Values are limited to the range 50 to 10000. |
+| `order` | string | `"date"` | `"date"` lists the newest commits first with branches interleaved; the first page appears at once. `"topo"` keeps the commits of each branch together (`git log --topo-order`), which is slow to start in large repositories. See [Log](log.md#order). |
 | `all_branches` | bool | `true` | Show the commits of all branches, tags and remotes (`git log --all`, without the stash) instead of only `HEAD`. Toggle in the Log with `a`; clearing the filters with `F` returns to this setting. |
 
 ### `[local_history]`
@@ -289,6 +291,7 @@ repository's Git directory, so all worktrees of a repository share it.
 | `commit_draft.txt` | The unfinished commit message, kept when you close the commit dialog without committing. |
 | `COMMIT_MSG` | Temporary message file passed to `git commit`. Deleted after the commit. |
 | `favorites.json` | Favorite branches. |
+| `log-topo-order` | Empty marker: date order did not list every commit before its parents in this repository, so the Log uses topological order. See [Log](log.md#order). |
 | `shelf/<id>/` | One folder per shelf entry: `meta.json`, `changes.patch` and copies of untracked files in `untracked/`. |
 | `local-history/` | Local history snapshots: `objects/`, `index.jsonl`, `state.json` and a `lock` file. Linked worktrees use `local-history/worktrees/<id>/`. |
 | `rebase/` | The todo list and commit messages written for the last interactive rebase. |

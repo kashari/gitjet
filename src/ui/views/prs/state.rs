@@ -187,7 +187,7 @@ pub fn start_list_load(
         g.list_gen
     };
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    crate::ui::bg::spawn(move || {
         if mode == Reload::Full {
             detect::clear_cache(&repo);
         }
@@ -281,7 +281,7 @@ pub fn start_details_load(shared: &SharedRef, hosting: Hosting, number: u64) {
     };
     let Some(conn) = conn else { return };
     let shared = shared.clone();
-    std::thread::spawn(move || {
+    crate::ui::bg::spawn(move || {
         let r = conn
             .api
             .details(number)

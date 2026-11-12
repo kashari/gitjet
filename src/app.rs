@@ -33,6 +33,14 @@ pub fn spinner_frame(since: Instant) -> &'static str {
     SPINNER[(since.elapsed().as_millis() / 100) as usize % SPINNER.len()]
 }
 
+/// How long the event loop sleeps waiting for input: short while background work is running.
+const BUSY_POLL: Duration = Duration::from_millis(10);
+const IDLE_POLL: Duration = Duration::from_millis(100);
+/// Redraw at least this often even when nothing seems to have changed.
+const IDLE_REDRAW: Duration = Duration::from_millis(500);
+/// Time between two frames of the spinner (and of popups, which may animate or wait on work).
+const SPINNER_FRAME: Duration = Duration::from_millis(80);
+
 /// Terminals report focus changes often (every Alt+Tab); a refresh this recent makes another redundant.
 const FOCUS_REFRESH_MIN_GAP: Duration = Duration::from_secs(1);
 
@@ -71,7 +79,7 @@ struct TaskDone {
     result: Result<String>,
 }
 
-fn load_head(repo: &Repo) -> HeadInfo {
+pub(crate) fn load_head(repo: &Repo) -> HeadInfo {
     let branch = repo.head_branch().unwrap_or_else(|| {
         repo.try_run(&["rev-parse", "--short", "HEAD"])
             .map(|s| format!("detached at {}", s.trim()))
@@ -96,8 +104,8 @@ fn load_head(repo: &Repo) -> HeadInfo {
 }
 
 #[derive(Default)]
-struct HeadInfo {
-    branch: String,
+pub(crate) struct HeadInfo {
+    pub(crate) branch: String,
     state: Option<RepoState>,
     ahead: u32,
     behind: u32,
@@ -197,9 +205,25 @@ impl App {
     }
 
     fn event_loop(&mut self, terminal: &mut DefaultTerminal, mouse: bool) -> Result<()> {
+        // Draw only when something may have changed: after input, when background work
+        // finished, for the spinner and toasts, and a few times a second as a safety net.
+        let mut redraw = true;
+        let mut drawn = Instant::now();
         loop {
-            terminal.draw(|f| self.draw(f))?;
-            if event::poll(Duration::from_millis(100))? {
+            if redraw || drawn.elapsed() >= IDLE_REDRAW {
+                terminal.draw(|f| self.draw(f))?;
+                drawn = Instant::now();
+            }
+            // While a background load is running, look for its result often so it shows as
+            // soon as it is there.
+            let wait = if crate::ui::bg::pending() {
+                BUSY_POLL
+            } else {
+                IDLE_POLL
+            };
+            redraw = false;
+            if event::poll(wait)? {
+                redraw = true;
                 // Drain all queued events before redrawing.
                 loop {
                     match event::read()? {
@@ -226,13 +250,20 @@ impl App {
             self.poll_tasks();
             if std::mem::take(&mut self.refresh_pending) {
                 self.refresh_all();
+                redraw = true;
             }
+            let toast = self.toast.is_some();
             self.tick();
+            let animating = !self.busy_text().is_empty() || !self.popups.is_empty();
+            redraw |= crate::ui::bg::take_finished()
+                || toast != self.toast.is_some()
+                || (animating && drawn.elapsed() >= SPINNER_FRAME);
             if let Some(mut cmd) = self.pending_suspend.take() {
                 leave(mouse);
                 let status = cmd.current_dir(&self.ctx.repo.root).status();
                 *terminal = enter(mouse)?;
                 terminal.clear()?;
+                redraw = true;
                 match status {
                     Ok(s) if !s.success() => {
                         self.apply(Action::Toast(format!("Command exited with {s}")))
@@ -343,7 +374,7 @@ impl App {
         }
         let repo = self.ctx.repo.clone();
         let tx = self.tx.clone();
-        std::thread::spawn(move || {
+        crate::ui::bg::spawn(move || {
             let result = job(&repo);
             let _ = tx.send(TaskDone {
                 id,

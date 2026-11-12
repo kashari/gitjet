@@ -12,7 +12,9 @@ mod menu;
 mod rows;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
@@ -27,7 +29,7 @@ use crate::action::Action;
 use crate::ctx::Ctx;
 use crate::git::graph::{layout, GraphRow};
 use crate::git::history;
-use crate::git::log::{Commit, LogQuery};
+use crate::git::log::{Commit, LogQuery, LogStop, LogStream};
 use crate::git::Repo;
 use crate::ui::popups::InputPopup;
 use crate::ui::views::Tab;
@@ -67,6 +69,9 @@ struct LoadDone {
     generation: u64,
     append: bool,
     requested: usize,
+    /// The commits loaded so far came in an order the graph can't use and were read again in
+    /// topological order: this result replaces them
+    reordered: bool,
     result: anyhow::Result<Loaded>,
 }
 
@@ -77,7 +82,14 @@ struct PushedDone {
     remotes: Option<Vec<String>>,
 }
 
+/// A stream that nobody read from for this long is closed, so no `git log` stays around for
+/// the whole session; the next page then starts a new one where this one stopped.
+const IDLE_STREAM: Duration = Duration::from_secs(30);
+
 /// Background loading of log pages. Only the result of the latest request is applied.
+///
+/// A reload starts a worker thread with one `git log` that stays open; scrolling asks the same
+/// worker for the next page, which is read from the running git instead of starting a new walk.
 struct Loader {
     tx: Sender<LoadDone>,
     rx: Receiver<LoadDone>,
@@ -86,10 +98,19 @@ struct Loader {
     generation: u64,
     /// `Some(append)` while a load is running
     running: Option<bool>,
+    /// Asks the current worker for the next page: (generation, commits wanted)
+    more: Option<Sender<(u64, usize)>>,
+    /// Stops the current worker's `git log`, also in the middle of a slow read
+    stop: Arc<Mutex<Option<LogStop>>>,
+    /// Ask git for `--topo-order`. Off by default: git then has to walk every branch and tag to
+    /// the bottom before it prints the first commit. Date order starts at once, and [`Worker`]
+    /// checks that it still lists children before parents; history with out-of-order commit
+    /// dates fails that check once and turns this on for the rest of the session.
+    topo: Arc<AtomicBool>,
 }
 
 impl Loader {
-    fn new() -> Self {
+    fn new(topo: bool) -> Self {
         let (tx, rx) = channel();
         let (pushed_tx, pushed_rx) = channel();
         Self {
@@ -99,6 +120,9 @@ impl Loader {
             pushed_rx,
             generation: 0,
             running: None,
+            more: None,
+            stop: Arc::default(),
+            topo: Arc::new(AtomicBool::new(topo)),
         }
     }
 
@@ -106,69 +130,209 @@ impl Loader {
         self.generation += 1;
         self.running = Some(append);
         let generation = self.generation;
+        if append {
+            if let Some(more) = &self.more {
+                if more.send((generation, q.max)).is_ok() {
+                    return;
+                }
+            }
+        }
+        // A new query: the previous worker's git is of no use any more.
+        if let Some(stop) = self.stop.lock().ok().and_then(|mut s| s.take()) {
+            stop.stop();
+        }
+        let (more_tx, more_rx) = channel();
+        self.more = Some(more_tx);
+        self.stop = Arc::default();
+        let worker = Worker {
+            repo,
+            q,
+            stream: None,
+            read: 0,
+            stop: self.stop.clone(),
+            topo: self.topo.clone(),
+            seen: HashSet::new(),
+        };
         let tx = self.tx.clone();
         let pushed_tx = self.pushed_tx.clone();
-        let requested = q.max;
-        std::thread::spawn(move || {
-            let result = load(&repo, &q, append);
+        std::thread::spawn(move || worker.run(generation, append, tx, pushed_tx, more_rx));
+    }
+}
+
+impl Drop for Loader {
+    fn drop(&mut self) {
+        if let Some(stop) = self.stop.lock().ok().and_then(|mut s| s.take()) {
+            stop.stop();
+        }
+    }
+}
+
+/// Exists once date order turned out not to list children first in this repository.
+fn topo_marker(repo: &Repo) -> std::path::PathBuf {
+    repo.common_dir.join("gitjet").join("log-topo-order")
+}
+
+/// One query's `git log`, kept open between pages.
+struct Worker {
+    repo: Repo,
+    q: LogQuery,
+    stream: Option<LogStream>,
+    /// Commits of this query handed out so far, counted from `q.skip`
+    read: usize,
+    stop: Arc<Mutex<Option<LogStop>>>,
+    topo: Arc<AtomicBool>,
+    /// Commits handed out in date order, to notice a parent listed before its child
+    seen: HashSet<String>,
+}
+
+impl Worker {
+    fn run(
+        mut self,
+        generation: u64,
+        append: bool,
+        tx: Sender<LoadDone>,
+        pushed_tx: Sender<PushedDone>,
+        more: Receiver<(u64, usize)>,
+    ) {
+        let mut job = Some((generation, self.q.max, append));
+        while let Some((generation, requested, append)) = job.take() {
+            let _busy = crate::ui::bg::busy();
+            let before = self.read;
+            let mut reordered = false;
+            let result = self.load(requested, append, &mut reordered);
             let head = result.as_ref().ok().and_then(|l| l.head.clone());
-            let _ = tx.send(LoadDone {
+            let sent = tx.send(LoadDone {
                 generation,
-                append,
-                requested,
+                append: append && !reordered,
+                requested: if reordered {
+                    before + requested
+                } else {
+                    requested
+                },
+                reordered,
                 result,
             });
+            if sent.is_err() {
+                return;
+            }
             // `branch -r --contains` can be slow with many remote branches: it runs after the commits
             // are delivered, still off the UI thread, and only feeds the "already pushed" warnings.
             if let Some(head) = head {
-                let remotes = history::pushed_to(&repo, &head).ok();
+                let remotes = history::pushed_to(&self.repo, &head).ok();
                 let _ = pushed_tx.send(PushedDone {
                     generation,
                     head,
                     remotes,
                 });
             }
-        });
+            drop(_busy);
+            job = loop {
+                match more.recv_timeout(IDLE_STREAM) {
+                    Ok((generation, n)) => break Some((generation, n, true)),
+                    Err(RecvTimeoutError::Timeout) => self.close(),
+                    Err(RecvTimeoutError::Disconnected) => break None,
+                }
+            };
+        }
     }
-}
 
-fn load(repo: &Repo, q: &LogQuery, append: bool) -> anyhow::Result<Loaded> {
-    // An unborn branch has no history to walk (but other refs may exist with `--all`).
-    let unborn_head =
-        !q.all && repo.head_commit().is_none() && q.revs.iter().all(|r| r.starts_with('-'));
-    let mut commits = if unborn_head {
-        Vec::new()
-    } else {
-        repo.log(q)?
-    };
-    let graph_parents = if q.paths.is_empty() {
-        HashMap::new()
-    } else {
-        filters::restore_real_parents(repo, &mut commits)?
-    };
-    if append {
-        return Ok(Loaded {
+    fn close(&mut self) {
+        self.stream = None;
+        if let Ok(mut s) = self.stop.lock() {
+            *s = None;
+        }
+    }
+
+    /// The next `n` commits of the query, from the open `git log` or a new one that skips what
+    /// was already read.
+    fn read_page(&mut self, n: usize) -> anyhow::Result<Vec<Commit>> {
+        if self.stream.is_none() {
+            let q = LogQuery {
+                skip: self.q.skip + self.read,
+                topo: self.q.topo && self.topo.load(Ordering::Relaxed),
+                ..self.q.clone()
+            };
+            let stream = self.repo.log_stream(&q)?;
+            if let Ok(mut s) = self.stop.lock() {
+                *s = Some(stream.stopper());
+            }
+            self.stream = Some(stream);
+        }
+        let stream = self.stream.as_mut().expect("opened above");
+        let page = stream.next_page(n);
+        let finished = stream.done() || page.is_err();
+        if let Ok(p) = &page {
+            self.read += p.len();
+        }
+        if finished {
+            self.close();
+        }
+        page
+    }
+
+    /// [`read_page`](Self::read_page), checked: in date order a commit can come after one of its
+    /// parents when commit dates are out of order. The graph needs children first, so everything
+    /// read so far is then read again in topological order and `reordered` is set.
+    fn page(&mut self, n: usize, reordered: &mut bool) -> anyhow::Result<Vec<Commit>> {
+        let page = self.read_page(n)?;
+        if !self.q.topo || self.topo.load(Ordering::Relaxed) {
+            return Ok(page);
+        }
+        let mut in_order = true;
+        for c in &page {
+            in_order &= !c.parents.iter().any(|p| self.seen.contains(p));
+            self.seen.insert(c.id.clone());
+        }
+        if in_order {
+            return Ok(page);
+        }
+        self.topo.store(true, Ordering::Relaxed);
+        // Remembered for this repository, so the next session does not load twice again.
+        if self.repo.data_dir().is_ok() {
+            let _ = std::fs::write(topo_marker(&self.repo), "");
+        }
+        self.seen = HashSet::new();
+        self.close();
+        let total = self.read - page.len() + n;
+        *reordered = self.read > page.len();
+        self.read = 0;
+        self.read_page(total)
+    }
+
+    fn load(&mut self, n: usize, append: bool, reordered: &mut bool) -> anyhow::Result<Loaded> {
+        let (repo, q) = (self.repo.clone(), self.q.clone());
+        // An unborn branch has no history to walk (but other refs may exist with `--all`).
+        let unborn_head =
+            !q.all && repo.head_commit().is_none() && q.revs.iter().all(|r| r.starts_with('-'));
+        let mut commits = if unborn_head {
+            Vec::new()
+        } else {
+            self.page(n, reordered)?
+        };
+        let graph_parents = if q.paths.is_empty() {
+            HashMap::new()
+        } else {
+            filters::restore_real_parents(&repo, &mut commits)?
+        };
+        if append && !*reordered {
+            return Ok(Loaded {
+                commits,
+                graph_parents,
+                refs: None,
+                head: None,
+                me: None,
+            });
+        }
+        let me = repo.user_identity();
+        let head = repo.head_commit();
+        Ok(Loaded {
             commits,
             graph_parents,
-            refs: None,
-            head: None,
-            me: None,
-        });
+            refs: Some(RefIndex::load(&repo)),
+            head,
+            me,
+        })
     }
-    let me = repo.config_get("user.email").map(|email| {
-        let name = repo
-            .config_get("user.name")
-            .unwrap_or_else(|| email.clone());
-        (name, email)
-    });
-    let head = repo.head_commit();
-    Ok(Loaded {
-        commits,
-        graph_parents,
-        refs: Some(RefIndex::load(repo)),
-        head,
-        me,
-    })
 }
 
 /// The Log tab.
@@ -243,7 +407,7 @@ impl LogView {
             me: None,
             error: None,
             notice: None,
-            loader: Loader::new(),
+            loader: Loader::new(ctx.config.log.order == "topo" || topo_marker(&ctx.repo).exists()),
             pending_select: None,
             keep_selection: None,
             list_area: Rect::default(),
@@ -289,6 +453,9 @@ impl LogView {
             match done.result {
                 Ok(l) if done.append => self.apply_page(l, done.requested),
                 Ok(l) => {
+                    if done.reordered {
+                        self.keep_selection = self.selected().map(|c| c.id.clone());
+                    }
                     self.reload_generation = done.generation;
                     self.apply_reload(l, done.requested)
                 }
@@ -1095,6 +1262,156 @@ mod tests {
         let mut config = Config::default();
         config.log.page_size = 50;
         (d, Ctx::new(repo, config))
+    }
+
+    /// Commit `message` with the given commit date (unix seconds).
+    fn commit_at(repo: &Repo, date: i64, message: &str) -> String {
+        write(repo, "a.txt", message);
+        repo.run(&["add", "-A"]).unwrap();
+        let mut c = repo.command();
+        c.args(["commit", "-q", "-m", message])
+            .env("GIT_COMMITTER_DATE", format!("{date} +0000"))
+            .env("GIT_AUTHOR_DATE", format!("{date} +0000"));
+        repo.run_cmd(c, &["commit"]).unwrap();
+        repo.head_commit().unwrap()
+    }
+
+    fn children_first(commits: &[Commit]) -> bool {
+        let mut seen = HashSet::new();
+        commits.iter().all(|c| {
+            let ok = !c.parents.iter().any(|p| seen.contains(p));
+            seen.insert(c.id.clone());
+            ok
+        })
+    }
+
+    #[test]
+    fn date_order_is_the_default_and_lists_children_first() {
+        let (_d, repo) = temp_repo();
+        commit_at(&repo, 1_600_000_000, "first");
+        repo.run(&["checkout", "-q", "-b", "feature"]).unwrap();
+        let feature = commit_at(&repo, 1_600_000_100, "feature work");
+        repo.run(&["checkout", "-q", "main"]).unwrap();
+        let main = commit_at(&repo, 1_600_000_200, "main work");
+        let ctx = Ctx::new(repo, Config::default());
+        let mut v = LogView::new(&ctx);
+        v.refresh(&ctx).unwrap();
+        wait_loaded(&mut v);
+        // Newest first across branches, not one branch after the other.
+        assert_eq!(v.commits[0].id, main);
+        assert_eq!(v.commits[1].id, feature);
+        assert!(children_first(&v.commits));
+        assert!(!v.loader.topo.load(Ordering::Relaxed));
+        assert!(!topo_marker(&ctx.repo).exists());
+    }
+
+    #[test]
+    fn topological_order_from_the_config() {
+        let (_d, mut ctx) = setup();
+        ctx.config.log.order = "topo".into();
+        let mut v = LogView::new(&ctx);
+        v.refresh(&ctx).unwrap();
+        wait_loaded(&mut v);
+        assert_eq!(v.commits.len(), 4);
+        assert!(children_first(&v.commits));
+        assert!(v.loader.topo.load(Ordering::Relaxed));
+    }
+
+    /// A branch whose commits are dated before the commit it started from: in date order git
+    /// lists that start commit before them. The log notices and reads again in topological order.
+    #[test]
+    fn out_of_order_dates_fall_back_to_topological_order() {
+        let (_d, repo) = temp_repo();
+        let base = commit_at(&repo, 2_000_000_000, "base");
+        repo.run(&["checkout", "-q", "-b", "old"]).unwrap();
+        commit_at(&repo, 1_000_000_100, "old 1");
+        commit_at(&repo, 1_000_000_200, "old 2");
+        repo.run(&["checkout", "-q", "main"]).unwrap();
+        commit_at(&repo, 2_000_000_300, "main 1");
+        let by_date = repo
+            .log(&LogQuery {
+                all: true,
+                topo: false,
+                ..LogQuery::default()
+            })
+            .unwrap();
+        assert!(
+            !children_first(&by_date),
+            "the repository must trip the check"
+        );
+
+        let ctx = Ctx::new(repo, Config::default());
+        let mut v = LogView::new(&ctx);
+        v.refresh(&ctx).unwrap();
+        wait_loaded(&mut v);
+        assert_eq!(v.commits.len(), 4);
+        assert!(children_first(&v.commits));
+        assert_eq!(v.commits.last().unwrap().id, base);
+        assert!(
+            v.loader.topo.load(Ordering::Relaxed),
+            "remembered for later reloads"
+        );
+        assert!(v.error.is_none());
+        // ...and for the next session, which starts in topological order right away.
+        assert!(topo_marker(&ctx.repo).exists());
+        assert!(LogView::new(&ctx).loader.topo.load(Ordering::Relaxed));
+    }
+
+    /// The same, found only on a later page: everything loaded so far is replaced, and the
+    /// selection stays on its commit.
+    #[test]
+    fn out_of_order_dates_on_a_later_page_reload_in_place() {
+        let (_d, repo) = temp_repo();
+        commit_at(&repo, 2_100_000_000, "base");
+        repo.run(&["checkout", "-q", "-b", "old"]).unwrap();
+        commit_at(&repo, 1_000_000_100, "old 1");
+        repo.run(&["checkout", "-q", "main"]).unwrap();
+        // Enough dated-in-order commits on top that the first page does not reach `base`.
+        commit_at(&repo, 2_100_000_100, "newer than base");
+        for i in 0..60 {
+            commit_at(&repo, 2_100_000_200 + i, &format!("main {i}"));
+        }
+        let mut config = Config::default();
+        config.log.page_size = 50;
+        let ctx = Ctx::new(repo, config);
+        let mut v = LogView::new(&ctx);
+        v.refresh(&ctx).unwrap();
+        wait_loaded(&mut v);
+        assert_eq!(v.commits.len(), 50);
+        assert!(!v.loader.topo.load(Ordering::Relaxed));
+        v.sel = 49;
+        let selected = v.commits[49].id.clone();
+        v.load_more(&ctx);
+        wait_loaded(&mut v);
+        assert_eq!(v.commits.len(), 63);
+        assert!(children_first(&v.commits));
+        assert!(v.loader.topo.load(Ordering::Relaxed));
+        assert_eq!(v.commits[v.sel].id, selected);
+        assert!(v.exhausted);
+    }
+
+    #[test]
+    fn scrolling_reads_the_next_pages_from_the_same_git_log() {
+        let (_d, repo) = temp_repo();
+        for i in 0..120 {
+            commit_at(&repo, 1_600_000_000 + i, &format!("c{i}"));
+        }
+        let all = repo.log(&LogQuery::default()).unwrap();
+        let mut config = Config::default();
+        config.log.page_size = 50;
+        let ctx = Ctx::new(repo, config);
+        let mut v = LogView::new(&ctx);
+        v.refresh(&ctx).unwrap();
+        wait_loaded(&mut v);
+        assert_eq!(v.commits.len(), 50);
+        v.load_more(&ctx);
+        wait_loaded(&mut v);
+        assert_eq!(v.commits.len(), 100);
+        assert!(!v.exhausted);
+        v.load_more(&ctx);
+        wait_loaded(&mut v);
+        assert_eq!(v.commits, all);
+        assert!(v.exhausted);
     }
 
     #[test]
