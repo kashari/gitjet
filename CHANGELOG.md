@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
 ### Removed
 
 - `gitjet ask` and the built-in model (the `ai` build feature, the `gitjet-ai-<platform>`
@@ -346,7 +348,8 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/kashari/gitjet/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kashari/gitjet/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kashari/gitjet/releases/tag/v0.2.0
 [0.1.9]: https://github.com/klajdishark/gitjet/compare/v0.1.1...v0.1.9
 [0.1.8]: https://github.com/kashari/gitjet/releases/tag/v0.1.8
