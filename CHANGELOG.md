@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- `gitjet ask` and the built-in model (the `ai` build feature, the `gitjet-ai-<platform>`
+  downloads and the hidden `dump-tools` command). 0.2.0 remains available for anyone who wants
+  them. gitjet is a single small binary again and builds without CMake or a C++ compiler.
+
 ### Changed
 
 - **The Log is much faster in large repositories.** Measured on a repository with 150,000
