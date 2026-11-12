@@ -427,7 +427,13 @@ mod tests {
             repo.rev_parse("dev").unwrap(),
             repo.rev_parse("origin/dev").unwrap()
         );
-        assert_eq!(std::fs::read_to_string(repo.path("a.txt")).unwrap(), "2\n");
+        // The clone uses the machine's line-ending setting (CRLF on Windows).
+        assert_eq!(
+            std::fs::read_to_string(repo.path("a.txt"))
+                .unwrap()
+                .trim_end(),
+            "2"
+        );
         assert_eq!(repo.head_branch().as_deref(), Some("main"));
         assert!(r.describe().contains("diverged"), "{}", r.describe());
 
