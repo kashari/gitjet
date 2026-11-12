@@ -91,7 +91,7 @@ kind = "gitlab"
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `theme` | string | `"dark"` | Color theme: `"dark"` or `"light"` (case does not matter). Any other value uses the dark theme. The theme also picks the syntax highlighting colors. |
+| `theme` | string | `"dark"` | Color theme, one of the 16 listed under [Themes](#themes). Change it from inside gitjet with the palette entry **Switch theme…**, which also writes this line for you. An unknown name uses `dark` and is reported at startup. |
 | `mouse` | bool | `true` | Mouse support: click tabs, scroll lists, click rows. Set to `false` to leave the mouse to your terminal (for example for selecting text). |
 | `editor` | string | not set | Command used to open files ("open in editor" actions, editing a conflicted file). When not set, gitjet uses `$VISUAL`, then `$EDITOR`, then `notepad` on Windows and `vi` elsewhere. The command runs through the system shell (`cmd /C` on Windows, `sh -c` elsewhere), so it can include arguments, for example `"your-editor --wait"`. gitjet suspends its screen while the editor runs. |
 
@@ -274,6 +274,43 @@ kind = "none"
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `write_commit_graph` | bool | `true` | When a large repository (20,000+ objects or 300+ refs) has no commit-graph file, write one in the background with `git commit-graph write --reachable`. It is the same cache `git gc` and `git maintenance` write, and it makes the Log, ahead/behind counts and "branches containing" several times faster. Set to `false` if gitjet should never write to `.git/objects`. |
+
+## Themes
+
+| Name | Kind | Background |
+|---|---|---|
+| `dark`, `light` | dark / light | Your terminal's own background |
+| `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`, `tokyo-night`, `catppuccin-mocha`, `one-dark`, `monokai`, `github-dark`, `rose-pine`, `high-contrast` | dark | Painted by the theme |
+| `gruvbox-light`, `solarized-light`, `catppuccin-latte` | light | Painted by the theme |
+
+To switch, open the palette (`:`), choose **Switch theme…** and pick one. It applies at once
+and is saved as the `theme` line of your config file; the rest of the file is not touched.
+
+### Your own colors: `[colors]`
+
+Any color of the active theme can be replaced. Values are `"#rrggbb"`.
+
+```toml
+theme = "nord"
+
+[colors]
+bg = "#1b1f27"        # background (set it on dark/light too, to stop using the terminal's)
+accent = "#ffb86c"
+added = "#7ee787"
+```
+
+Names: `bg`, `fg`, `dim`, `accent`, `border`, `border_focus`, `selection_bg`, `added`,
+`removed`, `modified`, `renamed`, `untracked`, `ignored`, `conflict`, `added_bg`, `removed_bg`,
+`added_word_bg`, `removed_word_bg`, `hunk`, `hash`, `author`, `date`, `local_branch`,
+`remote_branch`, `tag`, `head`, `warning`, `error`, `success`. An unknown name or a value that
+is not `#rrggbb` is reported at startup and ignored.
+
+### Fonts
+
+gitjet runs inside your terminal, and the terminal draws the text: the font and its size are
+settings of the terminal (Windows Terminal, iTerm2, Alacritty, kitty, GNOME Terminal...), not
+of gitjet. Change them there and gitjet follows; most terminals also zoom with `Ctrl` `+` /
+`Ctrl` `-`.
 
 ## Per-repository data: `.git/gitjet/`
 

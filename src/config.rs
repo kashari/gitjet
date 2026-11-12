@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// "dark" or "light"
+    /// A built-in theme: dark, light, dracula, nord, gruvbox-dark, gruvbox-light, solarized-dark,
+    /// solarized-light, tokyo-night, catppuccin-mocha, catppuccin-latte, one-dark, monokai,
+    /// github-dark, rose-pine, high-contrast
     pub theme: String,
     /// Enable mouse support (click tabs, scroll)
     pub mouse: bool,
@@ -25,6 +27,8 @@ pub struct Config {
     pub performance: PerformanceConfig,
     pub branches: BranchesConfig,
     /// Set when the config file exists but could not be parsed.
+    /// Colors that replace the theme's, by name: `added = "#7ee787"` (see the configuration docs)
+    pub colors: std::collections::BTreeMap<String, String>,
     #[serde(skip)]
     pub load_error: Option<String>,
 }
@@ -179,6 +183,7 @@ impl Default for Config {
             hosting: HostingConfig::default(),
             performance: PerformanceConfig::default(),
             branches: BranchesConfig::default(),
+            colors: Default::default(),
             load_error: None,
         }
     }
@@ -263,6 +268,16 @@ impl Config {
         }
     }
 
+    /// Make `name` the theme in the config file, changing only that line (comments and the rest
+    /// of the file stay as they are). Creates the file when there is none.
+    pub fn save_theme(name: &str) -> Result<()> {
+        let path = Self::path();
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        std::fs::create_dir_all(Self::dir())?;
+        std::fs::write(&path, with_theme(&text, name))
+            .with_context(|| format!("writing {}", path.display()))
+    }
+
     pub fn write_default() -> Result<PathBuf> {
         let path = Self::path();
         if !path.exists() {
@@ -274,9 +289,62 @@ impl Config {
     }
 }
 
+/// `text` (a config file) with its top-level `theme` set to `name`.
+fn with_theme(text: &str, name: &str) -> String {
+    let line = format!("theme = \"{name}\"");
+    let mut out = Vec::new();
+    let mut done = false;
+    let mut top_level = true;
+    for l in text.lines() {
+        let t = l.trim_start();
+        if t.starts_with('[') {
+            top_level = false;
+        }
+        let is_theme = top_level
+            && !done
+            && t.strip_prefix("theme")
+                .is_some_and(|r| r.trim_start().starts_with('='));
+        if is_theme {
+            out.push(line.clone());
+            done = true;
+        } else {
+            out.push(l.to_string());
+        }
+    }
+    if !done {
+        // Top-level keys must come before the first table.
+        out.insert(0, line);
+    }
+    out.join("\n") + "\n"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saving_the_theme_changes_only_that_line() {
+        let file =
+            "# my settings\ntheme = \"dark\"  # old\nmouse = false\n\n[diff]\ntheme = \"x\"\n";
+        assert_eq!(
+            with_theme(file, "nord"),
+            "# my settings\ntheme = \"nord\"\nmouse = false\n\n[diff]\ntheme = \"x\"\n"
+        );
+        assert_eq!(with_theme("", "nord"), "theme = \"nord\"\n");
+        assert_eq!(
+            with_theme("[log]\npage_size = 100\n", "light"),
+            "theme = \"light\"\n[log]\npage_size = 100\n"
+        );
+        let c: Config = toml::from_str(&with_theme(
+            "mouse = false\n[colors]\nadded = \"#00ff00\"\n",
+            "nord",
+        ))
+        .unwrap();
+        assert_eq!(
+            (c.theme.as_str(), c.mouse, c.colors.len()),
+            ("nord", false, 1)
+        );
+    }
 
     #[test]
     fn default_roundtrips() {

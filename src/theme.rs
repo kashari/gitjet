@@ -4,6 +4,8 @@ use ratatui::style::{Color, Style};
 
 #[derive(Debug, Clone)]
 pub struct Theme {
+    /// Background painted behind everything; `None` keeps the terminal's own background
+    pub bg: Option<Color>,
     pub fg: Color,
     pub dim: Color,
     pub accent: Color,
@@ -38,16 +40,432 @@ pub struct Theme {
     pub syntax_theme: &'static str,
 }
 
+/// The colors a theme is built from.
+struct Palette {
+    bg: u32,
+    fg: u32,
+    dim: u32,
+    border: u32,
+    selection: u32,
+    blue: u32,
+    green: u32,
+    yellow: u32,
+    purple: u32,
+    cyan: u32,
+    red: u32,
+    orange: u32,
+    syntax: &'static str,
+}
+
+fn rgb(c: u32) -> Color {
+    Color::Rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
+}
+
+/// `amount` (0..=1) of `over` mixed into `base`.
+fn mix(base: u32, over: u32, amount: f32) -> Color {
+    let ch = |shift: u32| {
+        let (b, o) = (
+            ((base >> shift) & 0xff) as f32,
+            ((over >> shift) & 0xff) as f32,
+        );
+        (b + (o - b) * amount).round() as u8
+    };
+    Color::Rgb(ch(16), ch(8), ch(0))
+}
+
+/// Built-in themes: (name, palette). `dark` and `light` come first and keep the terminal's own
+/// background; the others paint theirs.
+const PALETTES: &[(&str, Palette)] = &[
+    (
+        "dracula",
+        Palette {
+            bg: 0x282a36,
+            fg: 0xf8f8f2,
+            dim: 0x6272a4,
+            border: 0x44475a,
+            selection: 0x44475a,
+            blue: 0x8be9fd,
+            green: 0x50fa7b,
+            yellow: 0xf1fa8c,
+            purple: 0xbd93f9,
+            cyan: 0x8be9fd,
+            red: 0xff5555,
+            orange: 0xffb86c,
+            syntax: "base16-eighties.dark",
+        },
+    ),
+    (
+        "nord",
+        Palette {
+            bg: 0x2e3440,
+            fg: 0xd8dee9,
+            dim: 0x7b88a1,
+            border: 0x434c5e,
+            selection: 0x434c5e,
+            blue: 0x81a1c1,
+            green: 0xa3be8c,
+            yellow: 0xebcb8b,
+            purple: 0xb48ead,
+            cyan: 0x88c0d0,
+            red: 0xbf616a,
+            orange: 0xd08770,
+            syntax: "base16-ocean.dark",
+        },
+    ),
+    (
+        "gruvbox-dark",
+        Palette {
+            bg: 0x282828,
+            fg: 0xebdbb2,
+            dim: 0x928374,
+            border: 0x504945,
+            selection: 0x504945,
+            blue: 0x83a598,
+            green: 0xb8bb26,
+            yellow: 0xfabd2f,
+            purple: 0xd3869b,
+            cyan: 0x8ec07c,
+            red: 0xfb4934,
+            orange: 0xfe8019,
+            syntax: "base16-mocha.dark",
+        },
+    ),
+    (
+        "gruvbox-light",
+        Palette {
+            bg: 0xfbf1c7,
+            fg: 0x3c3836,
+            dim: 0x7c6f64,
+            border: 0xd5c4a1,
+            selection: 0xebdbb2,
+            blue: 0x076678,
+            green: 0x79740e,
+            yellow: 0xb57614,
+            purple: 0x8f3f71,
+            cyan: 0x427b58,
+            red: 0x9d0006,
+            orange: 0xaf3a03,
+            syntax: "Solarized (light)",
+        },
+    ),
+    (
+        "solarized-dark",
+        Palette {
+            bg: 0x002b36,
+            fg: 0x93a1a1,
+            dim: 0x657b83,
+            border: 0x0a4a59,
+            selection: 0x073642,
+            blue: 0x268bd2,
+            green: 0x859900,
+            yellow: 0xb58900,
+            purple: 0x6c71c4,
+            cyan: 0x2aa198,
+            red: 0xdc322f,
+            orange: 0xcb4b16,
+            syntax: "Solarized (dark)",
+        },
+    ),
+    (
+        "solarized-light",
+        Palette {
+            bg: 0xfdf6e3,
+            fg: 0x586e75,
+            dim: 0x93a1a1,
+            border: 0xd9d2bf,
+            selection: 0xeee8d5,
+            blue: 0x268bd2,
+            green: 0x859900,
+            yellow: 0xb58900,
+            purple: 0x6c71c4,
+            cyan: 0x2aa198,
+            red: 0xdc322f,
+            orange: 0xcb4b16,
+            syntax: "Solarized (light)",
+        },
+    ),
+    (
+        "tokyo-night",
+        Palette {
+            bg: 0x1a1b26,
+            fg: 0xc0caf5,
+            dim: 0x565f89,
+            border: 0x3b4261,
+            selection: 0x283457,
+            blue: 0x7aa2f7,
+            green: 0x9ece6a,
+            yellow: 0xe0af68,
+            purple: 0xbb9af7,
+            cyan: 0x7dcfff,
+            red: 0xf7768e,
+            orange: 0xff9e64,
+            syntax: "base16-ocean.dark",
+        },
+    ),
+    (
+        "catppuccin-mocha",
+        Palette {
+            bg: 0x1e1e2e,
+            fg: 0xcdd6f4,
+            dim: 0x7f849c,
+            border: 0x45475a,
+            selection: 0x45475a,
+            blue: 0x89b4fa,
+            green: 0xa6e3a1,
+            yellow: 0xf9e2af,
+            purple: 0xcba6f7,
+            cyan: 0x94e2d5,
+            red: 0xf38ba8,
+            orange: 0xfab387,
+            syntax: "base16-mocha.dark",
+        },
+    ),
+    (
+        "catppuccin-latte",
+        Palette {
+            bg: 0xeff1f5,
+            fg: 0x4c4f69,
+            dim: 0x8c8fa1,
+            border: 0xccd0da,
+            selection: 0xccd0da,
+            blue: 0x1e66f5,
+            green: 0x40a02b,
+            yellow: 0xdf8e1d,
+            purple: 0x8839ef,
+            cyan: 0x179299,
+            red: 0xd20f39,
+            orange: 0xfe640b,
+            syntax: "InspiredGitHub",
+        },
+    ),
+    (
+        "one-dark",
+        Palette {
+            bg: 0x282c34,
+            fg: 0xabb2bf,
+            dim: 0x5c6370,
+            border: 0x3e4451,
+            selection: 0x3e4451,
+            blue: 0x61afef,
+            green: 0x98c379,
+            yellow: 0xe5c07b,
+            purple: 0xc678dd,
+            cyan: 0x56b6c2,
+            red: 0xe06c75,
+            orange: 0xd19a66,
+            syntax: "base16-ocean.dark",
+        },
+    ),
+    (
+        "monokai",
+        Palette {
+            bg: 0x272822,
+            fg: 0xf8f8f2,
+            dim: 0x75715e,
+            border: 0x49483e,
+            selection: 0x49483e,
+            blue: 0x66d9ef,
+            green: 0xa6e22e,
+            yellow: 0xe6db74,
+            purple: 0xae81ff,
+            cyan: 0x66d9ef,
+            red: 0xf92672,
+            orange: 0xfd971f,
+            syntax: "base16-eighties.dark",
+        },
+    ),
+    (
+        "github-dark",
+        Palette {
+            bg: 0x0d1117,
+            fg: 0xc9d1d9,
+            dim: 0x8b949e,
+            border: 0x30363d,
+            selection: 0x1f3a5f,
+            blue: 0x58a6ff,
+            green: 0x3fb950,
+            yellow: 0xd29922,
+            purple: 0xbc8cff,
+            cyan: 0x39c5cf,
+            red: 0xf85149,
+            orange: 0xf0883e,
+            syntax: "base16-ocean.dark",
+        },
+    ),
+    (
+        "rose-pine",
+        Palette {
+            bg: 0x191724,
+            fg: 0xe0def4,
+            dim: 0x6e6a86,
+            border: 0x403d52,
+            selection: 0x403d52,
+            blue: 0x9ccfd8,
+            green: 0x31748f,
+            yellow: 0xf6c177,
+            purple: 0xc4a7e7,
+            cyan: 0x9ccfd8,
+            red: 0xeb6f92,
+            orange: 0xebbcba,
+            syntax: "base16-mocha.dark",
+        },
+    ),
+    (
+        "high-contrast",
+        Palette {
+            bg: 0x000000,
+            fg: 0xffffff,
+            dim: 0xb0b0b0,
+            border: 0x808080,
+            selection: 0x003f8f,
+            blue: 0x5cb3ff,
+            green: 0x3dff7a,
+            yellow: 0xffe14d,
+            purple: 0xe29bff,
+            cyan: 0x4de8ff,
+            red: 0xff5c5c,
+            orange: 0xffa64d,
+            syntax: "base16-ocean.dark",
+        },
+    ),
+];
+
 impl Theme {
+    /// Names of all built-in themes, in the order the switcher lists them.
+    pub fn names() -> Vec<&'static str> {
+        ["dark", "light"]
+            .into_iter()
+            .chain(PALETTES.iter().map(|(n, _)| *n))
+            .collect()
+    }
+
     pub fn from_name(name: &str) -> Self {
-        match name.to_ascii_lowercase().as_str() {
+        let name = name.to_ascii_lowercase();
+        match name.as_str() {
             "light" => Self::light(),
-            _ => Self::dark(),
+            _ => PALETTES
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, p)| Self::from_palette(p))
+                .unwrap_or_else(Self::dark),
+        }
+    }
+
+    /// The theme named in the config, with the `[colors]` overrides applied. The second value
+    /// lists what was wrong (unknown theme, unknown color name, bad value).
+    pub fn from_config(config: &crate::config::Config) -> (Self, Vec<String>) {
+        let mut problems = Vec::new();
+        if !Self::names().contains(&config.theme.to_ascii_lowercase().as_str()) {
+            problems.push(format!(
+                "unknown theme \"{}\" (available: {})",
+                config.theme,
+                Self::names().join(", ")
+            ));
+        }
+        let mut theme = Self::from_name(&config.theme);
+        for (key, value) in &config.colors {
+            let Some(color) = parse_color(value) else {
+                problems.push(format!(
+                    "[colors] {key} = \"{value}\": expected \"#rrggbb\""
+                ));
+                continue;
+            };
+            if !theme.set(key, color) {
+                problems.push(format!("[colors] {key}: no such color"));
+            }
+        }
+        (theme, problems)
+    }
+
+    /// Set one color by its field name; `false` when there is no such field.
+    fn set(&mut self, key: &str, c: Color) -> bool {
+        let slot = match key {
+            "bg" => {
+                self.bg = Some(c);
+                return true;
+            }
+            "fg" => &mut self.fg,
+            "dim" => &mut self.dim,
+            "accent" => &mut self.accent,
+            "border" => &mut self.border,
+            "border_focus" => &mut self.border_focus,
+            "selection_bg" => &mut self.selection_bg,
+            "added" => &mut self.added,
+            "removed" => &mut self.removed,
+            "modified" => &mut self.modified,
+            "renamed" => &mut self.renamed,
+            "untracked" => &mut self.untracked,
+            "ignored" => &mut self.ignored,
+            "conflict" => &mut self.conflict,
+            "added_bg" => &mut self.added_bg,
+            "removed_bg" => &mut self.removed_bg,
+            "added_word_bg" => &mut self.added_word_bg,
+            "removed_word_bg" => &mut self.removed_word_bg,
+            "hunk" => &mut self.hunk,
+            "hash" => &mut self.hash,
+            "author" => &mut self.author,
+            "date" => &mut self.date,
+            "local_branch" => &mut self.local_branch,
+            "remote_branch" => &mut self.remote_branch,
+            "tag" => &mut self.tag,
+            "head" => &mut self.head,
+            "warning" => &mut self.warning,
+            "error" => &mut self.error,
+            "success" => &mut self.success,
+            _ => return false,
+        };
+        *slot = c;
+        true
+    }
+
+    fn from_palette(p: &Palette) -> Self {
+        Self {
+            bg: Some(rgb(p.bg)),
+            fg: rgb(p.fg),
+            dim: rgb(p.dim),
+            accent: rgb(p.blue),
+            border: rgb(p.border),
+            border_focus: rgb(p.blue),
+            selection_bg: rgb(p.selection),
+            added: rgb(p.green),
+            removed: rgb(p.red),
+            modified: rgb(p.blue),
+            renamed: rgb(p.purple),
+            untracked: rgb(p.orange),
+            ignored: rgb(p.dim),
+            conflict: rgb(p.red),
+            added_bg: mix(p.bg, p.green, 0.16),
+            removed_bg: mix(p.bg, p.red, 0.16),
+            added_word_bg: mix(p.bg, p.green, 0.36),
+            removed_word_bg: mix(p.bg, p.red, 0.36),
+            hunk: rgb(p.cyan),
+            hash: rgb(p.yellow),
+            author: rgb(p.green),
+            date: rgb(p.dim),
+            local_branch: rgb(p.green),
+            remote_branch: rgb(p.purple),
+            tag: rgb(p.yellow),
+            head: rgb(p.blue),
+            warning: rgb(p.yellow),
+            error: rgb(p.red),
+            success: rgb(p.green),
+            graph: [
+                rgb(p.blue),
+                rgb(p.green),
+                rgb(p.yellow),
+                rgb(p.purple),
+                rgb(p.cyan),
+                rgb(p.red),
+                rgb(p.orange),
+                rgb(p.dim),
+            ],
+            syntax_theme: p.syntax,
         }
     }
 
     pub fn dark() -> Self {
         Self {
+            bg: None,
             fg: Color::Rgb(0xd4, 0xd7, 0xdd),
             dim: Color::Rgb(0x7f, 0x84, 0x8e),
             accent: Color::Rgb(0x6c, 0xa9, 0xf2),
@@ -92,6 +510,7 @@ impl Theme {
 
     pub fn light() -> Self {
         Self {
+            bg: None,
             fg: Color::Rgb(0x24, 0x29, 0x2f),
             dim: Color::Rgb(0x6e, 0x77, 0x81),
             accent: Color::Rgb(0x09, 0x69, 0xda),
@@ -161,5 +580,60 @@ impl Theme {
 
     pub fn key(&self) -> Style {
         Style::default().fg(self.accent)
+    }
+}
+
+/// `#rrggbb` (the `#` is optional).
+fn parse_color(s: &str) -> Option<Color> {
+    let hex = s.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    u32::from_str_radix(hex, 16).ok().map(rgb)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn at_least_ten_themes_all_resolve_by_name() {
+        let names = Theme::names();
+        assert!(names.len() >= 10, "{names:?}");
+        for n in &names {
+            let c = Config {
+                theme: n.to_string(),
+                ..Config::default()
+            };
+            let (t, problems) = Theme::from_config(&c);
+            assert!(problems.is_empty(), "{n}: {problems:?}");
+            assert_eq!(t.bg.is_none(), matches!(*n, "dark" | "light"), "{n}");
+            assert!(
+                crate::ui::diff_view::highlight::theme(t.syntax_theme)
+                    .is_some_and(|_| crate::ui::diff_view::highlight::has_theme(t.syntax_theme)),
+                "{n}: syntax theme {}",
+                t.syntax_theme
+            );
+        }
+        assert_eq!(Theme::from_name("Nord").bg, Some(rgb(0x2e3440)));
+    }
+
+    #[test]
+    fn colors_from_the_config_override_the_theme_and_mistakes_are_reported() {
+        let mut c = Config {
+            theme: "nord".into(),
+            ..Config::default()
+        };
+        c.colors.insert("added".into(), "#00ff00".into());
+        c.colors.insert("bg".into(), "101010".into());
+        c.colors.insert("nonsense".into(), "#000000".into());
+        c.colors.insert("removed".into(), "red".into());
+        let (t, problems) = Theme::from_config(&c);
+        assert_eq!(t.added, Color::Rgb(0, 255, 0));
+        assert_eq!(t.bg, Some(Color::Rgb(16, 16, 16)));
+        assert_eq!(problems.len(), 2, "{problems:?}");
+        c.theme = "no-such".into();
+        assert!(Theme::from_config(&c).1[0].contains("unknown theme"));
     }
 }

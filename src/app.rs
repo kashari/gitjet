@@ -331,6 +331,19 @@ impl App {
                 }
                 Err(e) => self.apply(Action::Error(format!("{e:#}"))),
             },
+            Action::SetTheme(name) => {
+                self.ctx.config.theme = name.clone();
+                let (theme, _) = crate::theme::Theme::from_config(&self.ctx.config);
+                self.ctx.theme = theme;
+                match crate::config::Config::save_theme(&name) {
+                    Ok(()) => self.apply(Action::Toast(format!("Theme: {name}"))),
+                    Err(e) => self.apply(Action::Error(format!(
+                        "Theme {name} is on for this session, but could not be saved: {e:#}"
+                    ))),
+                }
+                // Cached, already colored content (diffs) is rebuilt.
+                self.apply(Action::Refresh);
+            }
             Action::Batch(v) => {
                 for a in v {
                     self.apply(a);
@@ -659,6 +672,23 @@ impl App {
         let items: Vec<MenuItem> = views::palette()
             .into_iter()
             .map(|p| MenuItem::new(p.name, "", p.run))
+            .chain(std::iter::once(MenuItem::new(
+                "Switch theme…",
+                "",
+                |ctx| {
+                    let current = ctx.config.theme.to_ascii_lowercase();
+                    let items = crate::theme::Theme::names()
+                        .into_iter()
+                        .map(|name| {
+                            let mark = if name == current { "● " } else { "  " };
+                            MenuItem::new(format!("{mark}{name}"), "", move |_| {
+                                Action::SetTheme(name.to_string())
+                            })
+                        })
+                        .collect();
+                    Action::popup(MenuPopup::new("Theme", items).filterable())
+                },
+            )))
             .chain(Tab::ALL.iter().enumerate().map(|(i, t)| {
                 let t = *t;
                 MenuItem::new(
@@ -683,6 +713,19 @@ impl App {
         self.draw_hints(f, hints);
         for p in self.popups.iter_mut() {
             p.draw(f, area, &self.ctx);
+        }
+        // Themes with their own background: every cell nothing gave a background (or a text
+        // color) to gets the theme's, so the whole screen is in the theme, popups included.
+        if let Some(bg) = self.ctx.theme.bg {
+            let fg = self.ctx.theme.fg;
+            for cell in f.buffer_mut().content.iter_mut() {
+                if cell.bg == ratatui::style::Color::Reset {
+                    cell.bg = bg;
+                }
+                if cell.fg == ratatui::style::Color::Reset {
+                    cell.fg = fg;
+                }
+            }
         }
         // The status bar paints its row in `selection_bg`; anything else there means a popup
         // covered it.

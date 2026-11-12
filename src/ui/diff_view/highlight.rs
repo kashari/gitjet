@@ -30,6 +30,12 @@ fn theme_set() -> &'static ThemeSet {
     SET.get_or_init(ThemeSet::load_defaults)
 }
 
+/// True when a syntect theme called exactly `name` is bundled.
+#[cfg(test)]
+pub fn has_theme(name: &str) -> bool {
+    theme_set().themes.contains_key(name)
+}
+
 /// The syntect theme called `name`, falling back to a bundled dark theme.
 pub fn theme(name: &str) -> Option<&'static Theme> {
     let ts = theme_set();

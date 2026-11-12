@@ -10,8 +10,11 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn new(repo: Repo, config: Config) -> Self {
-        let theme = Theme::from_name(&config.theme);
+    pub fn new(repo: Repo, mut config: Config) -> Self {
+        let (theme, problems) = Theme::from_config(&config);
+        if config.load_error.is_none() && !problems.is_empty() {
+            config.load_error = Some(problems.join("; "));
+        }
         Self {
             repo,
             config,

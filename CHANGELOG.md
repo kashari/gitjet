@@ -44,6 +44,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `gitjet revert <hash>...`: the same for reverting.
 - Palette entry **Cherry-pick commits…** (was **Cherry-pick…**): paste a list of hashes, review
   the checked list, confirm.
+- **16 color themes** (were 2): `dark`, `light`, `dracula`, `nord`, `gruvbox-dark`,
+  `gruvbox-light`, `solarized-dark`, `solarized-light`, `tokyo-night`, `catppuccin-mocha`,
+  `catppuccin-latte`, `one-dark`, `monokai`, `github-dark`, `rose-pine`, `high-contrast`. The
+  palette entry **Switch theme…** applies one at once and saves it. The new themes paint their
+  own background.
+- `[colors]` in the config replaces single colors of the theme (`added = "#7ee787"`).
 - `gitjet __bench [dir]` (hidden): times the loads behind the slowest screens without the
   terminal, to compare a change before and after on the same repository.
 

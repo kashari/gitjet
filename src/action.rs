@@ -52,6 +52,8 @@ pub enum Action {
     Suspend(Command),
     /// Open another repository (worktree, submodule, nested repo, recent repo).
     SwitchRepo(PathBuf),
+    /// Use this built-in theme from now on and save it to the config file.
+    SetTheme(String),
     /// Several actions, applied in order.
     Batch(Vec<Action>),
 }
