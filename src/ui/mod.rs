@@ -4,6 +4,7 @@ pub mod bg;
 pub mod diff_view;
 pub mod editor;
 pub mod popups;
+pub mod search;
 pub mod views;
 pub mod widgets;
 

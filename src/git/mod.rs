@@ -25,6 +25,7 @@ pub mod patch;
 pub mod pick;
 pub mod rebase;
 pub mod remote;
+pub mod search;
 pub mod shelf;
 pub mod stash;
 pub mod upkeep;

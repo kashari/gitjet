@@ -35,6 +35,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Find in files** (`Ctrl+F` on every tab, palette **Find in files…**): searches all tracked
+  and untracked files while you type, with match case, whole words and regular expression
+  switches, a preview of the selected match, and `Enter` to open it at that line.
+- **Go to file or class** (`Ctrl+N` / `Ctrl+P`, palette **Go to file or class…**): open a file
+  by part of its name, by the starts of its words (`UsSe` → `UserService.java`), by path
+  (`util/str`) or at a line (`strings:42`); also lists class, struct and function declarations
+  with that name inside files.
+
 - `gitjet pick <hash>...`: cherry-pick commits by hash from the shell. The hashes can be given
   in any order (also pasted with commas or new lines, or piped in); all are checked before
   anything runs and every unknown one is listed. The plan is shown, commits the branch already

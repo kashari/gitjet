@@ -579,6 +579,17 @@ impl App {
                     self.switch_tab((self.active + 1) % self.views.len());
                     return;
                 }
+                // IDE searches, from every tab. (A terminal cannot report a double Shift, and
+                // most cannot tell Ctrl+Shift+F from Ctrl+F.)
+                KeyCode::Char('f') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.apply(Action::popup(crate::ui::search::FindInFiles::new()));
+                    return;
+                }
+                KeyCode::Char('n' | 'p') if key.modifiers == KeyModifiers::CONTROL => {
+                    let goto = crate::ui::search::GoTo::new(&self.ctx);
+                    self.apply(Action::popup(goto));
+                    return;
+                }
                 KeyCode::F(5) => {
                     self.apply(Action::Refresh);
                     return;

@@ -64,6 +64,7 @@ pub fn build(ctx: &Ctx) -> Vec<Box<dyn View>> {
 /// Every feature's palette entries.
 pub fn palette() -> Vec<PaletteItem> {
     let mut v = Vec::new();
+    v.extend(crate::ui::search::palette());
     v.extend(changes::palette());
     v.extend(log::palette());
     v.extend(branches::palette());
