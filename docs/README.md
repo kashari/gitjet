@@ -20,8 +20,8 @@ New here? Start with [Getting started](getting-started.md). Looking for a specif
   gitjet, command-line options.
 - [Feature overview](feature-overview.md): common Git tasks and the tab and key for each.
 - [Search](search.md): find in files (`Ctrl+F`), go to file or class (`Ctrl+N`).
-- [Command line](command-line.md): `gitjet pick` and `gitjet revert` by hash, without opening
-  the UI.
+- [Command line](command-line.md): `gitjet pick`, `revert`, `sync`, `cleanup`, `undo` and
+  `fixup` without opening the UI.
 - [Keyboard reference](keyboard-reference.md): every key for every tab and dialog.
 - [Configuration](configuration.md): every setting, commit checks, hosting entries, where data is
   stored.

@@ -255,45 +255,36 @@ pub fn undo_points(repo: &Repo, n: usize) -> Result<Vec<UndoPoint>> {
             "reflog",
             "show",
             &format!("-n{}", n + 1),
-            "--format=%H%x00%gs%x00%ct",
+            "--date=unix",
+            "--format=%H%x00%gs%x00%gd",
             &reference,
             "--",
         ])
         .unwrap_or_default();
-    let entries: Vec<(String, String)> = out
+    // (commit, what happened, when): with `--date=unix`, %gd is `ref@{<seconds>}`.
+    let entries: Vec<(String, String, i64)> = out
         .lines()
         .filter_map(|l| {
             let mut f = l.split('\0');
-            Some((f.next()?.to_string(), f.next()?.to_string()))
+            let (id, subject, selector) = (f.next()?, f.next()?, f.next()?);
+            let when = selector
+                .rsplit_once("@{")
+                .and_then(|(_, t)| t.trim_end_matches('}').parse().ok())
+                .unwrap_or(0);
+            Some((id.to_string(), subject.to_string(), when))
         })
         .collect();
     let mut points = Vec::new();
-    for (i, pair) in entries.windows(2).enumerate() {
-        let (current, subject) = &pair[0];
-        let (before, _) = &pair[1];
+    for pair in entries.windows(2) {
+        let (current, subject, when) = &pair[0];
+        let before = &pair[1].0;
         if current == before {
             continue;
         }
-        let when = repo
-            .try_run(&[
-                "reflog",
-                "show",
-                "-n1",
-                "--format=%gd",
-                "--date=unix",
-                &format!("{reference}@{{{i}}}"),
-                "--",
-            ])
-            .and_then(|s| {
-                let s = s.trim();
-                s.rsplit_once("@{")
-                    .and_then(|(_, t)| t.trim_end_matches('}').parse().ok())
-            })
-            .unwrap_or(0);
         points.push(UndoPoint {
             target: before.clone(),
             what: plain_operation(subject),
-            when,
+            when: *when,
         });
     }
     points.truncate(n);
@@ -515,6 +506,11 @@ mod tests {
         );
         assert_eq!(points[1].target, first);
         assert_eq!(points[1].what, "commit \"second\"");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!((now - points[0].when).abs() < 600, "{}", points[0].when);
 
         // Unrelated local changes survive.
         write(&repo, "notes.txt", "wip\n");

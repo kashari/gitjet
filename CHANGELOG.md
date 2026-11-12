@@ -50,6 +50,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   puts them on another branch without switching to it or touching your files, `--push` pushes
   afterwards, `-n` only shows the plan.
 - `gitjet revert <hash>...`: the same for reverting.
+- `gitjet sync` / palette **Sync all branches**: fetch, then fast-forward every local branch
+  that is only behind its upstream, without checking it out.
+- `gitjet cleanup` / palette **Clean up branches…**: delete local branches that are merged into
+  the main branch; lists the ones whose remote branch is gone.
+- `gitjet undo` / palette **Undo last operation…**: move the branch back to before one of its
+  last operations (commit, merge, pull, rebase, reset, cherry-pick). Keeps uncommitted changes
+  and can itself be undone.
+- `gitjet fixup <hash>` / Log commit menu `f`: fold the staged changes into an earlier commit.
 - Palette entry **Cherry-pick commits…** (was **Cherry-pick…**): paste a list of hashes, review
   the checked list, confirm.
 - **16 color themes** (were 2): `dark`, `light`, `dracula`, `nord`, `gruvbox-dark`,

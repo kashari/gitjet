@@ -181,6 +181,26 @@ pub fn commit_menu(sel: Selection) -> Action {
         .enabled(on_branch),
     );
     let c1 = c.clone();
+    items.push(
+        MenuItem::new("Fold staged changes into this commit…", "f", move |_| {
+            let c2 = c1.clone();
+            Action::popup(ConfirmPopup::new(
+                "Fix up",
+                format!(
+                    "Fold the staged changes into {} {}?\n\nThis rewrites that commit and every commit after it.",
+                    c1.short,
+                    truncate(&c1.subject, 50)
+                ),
+                move |_| {
+                    Action::spawn("Fix up", move |repo| {
+                        crate::git::upkeep::fixup_into(repo, &c2.id)
+                    })
+                },
+            ))
+        })
+        .enabled(on_branch && !many),
+    );
+    let c1 = c.clone();
     items.push(MenuItem::new("Show diff", "d", move |_| show_diff(&c1)));
     let c1 = c.clone();
     items.push(

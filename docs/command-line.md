@@ -58,6 +58,61 @@ Same input rules as `gitjet pick`. The commits are reverted on the current branc
 with one revert commit each (`git revert --no-edit`). Merge commits are reverted against their
 first parent. Options: `--push`, `-n` / `--dry-run`, `-y` / `--yes`.
 
+## `gitjet sync`: bring all branches up to date
+
+```bash
+gitjet sync             # fetch, then fast-forward
+gitjet sync --no-fetch  # use what was fetched before
+```
+
+Fetches all remotes, then fast-forwards every local branch that is only behind its upstream,
+without checking it out. Your current branch is fast-forwarded too, unless uncommitted changes
+are in the way. Branches that also have commits of their own are never touched; they are
+listed as "diverged" so you can merge or rebase them yourself. In the UI: palette
+**Sync all branches**.
+
+## `gitjet cleanup`: delete branches you are done with
+
+```bash
+gitjet cleanup -n      # only show
+gitjet cleanup         # delete merged branches, after asking
+gitjet cleanup --gone  # also delete branches whose remote branch is gone but have unmerged commits
+```
+
+Lists local branches that are merged into the main branch (where `origin/HEAD` points, else
+`main` or `master`; a merge into your local main that is not pushed yet counts), and branches
+whose remote branch was deleted. Merged branches are deleted after you confirm. Branches with
+commits that are not in the main branch are kept unless you pass `--gone`. The current branch,
+the main branch and branches open in another work tree are never listed. In the UI: palette
+**Clean up branches…**.
+
+## `gitjet undo`: go back to before the last operation
+
+```bash
+gitjet undo --list   # the last operations on this branch, numbered
+gitjet undo          # back to before the last one
+gitjet undo 3        # back to before the third last
+```
+
+Moves the current branch back to where it was before a commit, merge, pull, rebase, reset or
+cherry-pick, using Git's reflog. Uncommitted changes are kept; if they touch files that would
+change, nothing happens and gitjet tells you to commit or stash first. Nothing is lost: the
+undo is itself an operation, so `gitjet undo` again brings the previous state back. In the UI:
+palette **Undo last operation…**.
+
+## `gitjet fixup`: put staged changes into an earlier commit
+
+```bash
+git add src/login.rs
+gitjet fixup 5c84679
+```
+
+Folds what is staged into that commit, as if it had been part of it from the start. This
+rewrites the commit and every commit after it, so use it on commits you have not pushed. If the
+change does not fit that commit without conflicts, nothing is changed and your changes stay
+staged. Histories with merge commits after the target are refused. In the UI: Log, `.` on the
+commit, then `f`.
+
 ## Other subcommands
 
 | Command | Effect |
