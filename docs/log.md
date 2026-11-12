@@ -155,8 +155,16 @@ Press `v` or `Space` to mark the selected commit; the selection moves to the nex
 3. If a pick stops on conflicts, gitjet switches to the [Conflicts](conflicts.md) tab, where you
    resolve them and continue or abort.
 
-From anywhere, the palette entry **Cherry-pick…** takes one or more revisions separated by
-spaces, oldest first.
+To bring in commits you only have the hashes of, open the palette (`:`) and choose
+**Cherry-pick commits…**:
+
+1. Paste the hashes, in any order, separated by spaces, commas or new lines. Press `Ctrl+S`.
+2. gitjet checks all of them. If any is unknown or ambiguous it lists them and changes nothing.
+3. It shows the commits in the order they will be applied (oldest first), with the ones your
+   branch already contains marked as skipped. `y` runs it.
+
+The same from the shell: `gitjet pick <hash>...`, which can also put the commits on another
+branch without switching to it. See [Command line](command-line.md).
 
 ### Revert a commit
 
@@ -346,7 +354,7 @@ cancel.
 - Go to commit…
 - Undo last commit
 - Reset HEAD…
-- Cherry-pick…
+- Cherry-pick commits…
 - Revert…
 - Filter log by user…
 - Filter log by branch…

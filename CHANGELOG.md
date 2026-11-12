@@ -29,6 +29,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `gitjet pick <hash>...`: cherry-pick commits by hash from the shell. The hashes can be given
+  in any order (also pasted with commas or new lines, or piped in); all are checked before
+  anything runs and every unknown one is listed. The plan is shown, commits the branch already
+  has are left out, and the rest is applied oldest first after you confirm. `--onto <branch>`
+  puts them on another branch without switching to it or touching your files, `--push` pushes
+  afterwards, `-n` only shows the plan.
+- `gitjet revert <hash>...`: the same for reverting.
+- Palette entry **Cherry-pick commits…** (was **Cherry-pick…**): paste a list of hashes, review
+  the checked list, confirm.
 - `gitjet __bench [dir]` (hidden): times the loads behind the slowest screens without the
   terminal, to compare a change before and after on the same repository.
 

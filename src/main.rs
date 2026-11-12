@@ -3,6 +3,7 @@ mod action;
 mod ai;
 mod app;
 mod bench;
+mod cli;
 mod config;
 mod ctx;
 mod git;
@@ -40,6 +41,40 @@ enum Cmd {
     ConfigPath,
     /// Write a config file with all default settings (if none exists)
     ConfigInit,
+    /// Cherry-pick commits by hash onto the current branch (or --onto another one)
+    Pick {
+        /// Commit hashes, in any order; read from standard input when none are given
+        revs: Vec<String>,
+        /// Put the commits on this branch instead, without switching to it
+        #[arg(long, value_name = "BRANCH")]
+        onto: Option<String>,
+        /// Push the branch afterwards
+        #[arg(long)]
+        push: bool,
+        /// Apply in the order given instead of oldest first
+        #[arg(long)]
+        keep_order: bool,
+        /// Only show what would be done
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Do not ask before running
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// Revert commits by hash on the current branch, newest first
+    Revert {
+        /// Commit hashes, in any order; read from standard input when none are given
+        revs: Vec<String>,
+        /// Push the branch afterwards
+        #[arg(long)]
+        push: bool,
+        /// Only show what would be done
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Do not ask before running
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
     /// Print the AI tool registry as JSON (for the training pipeline)
     #[command(hide = true)]
     DumpTools {
@@ -100,6 +135,38 @@ fn main() -> Result<()> {
             dry_run,
             golden,
         }) => return ask(cli.path, &request.join(" "), dry_run, golden),
+        Some(Cmd::Pick {
+            revs,
+            onto,
+            push,
+            keep_order,
+            dry_run,
+            yes,
+        }) => {
+            let common = cli::Common {
+                path: cli.path,
+                revs,
+                push,
+                dry_run,
+                yes,
+            };
+            return cli::pick(&common, onto.as_deref(), keep_order);
+        }
+        Some(Cmd::Revert {
+            revs,
+            push,
+            dry_run,
+            yes,
+        }) => {
+            let common = cli::Common {
+                path: cli.path,
+                revs,
+                push,
+                dry_run,
+                yes,
+            };
+            return cli::revert(&common);
+        }
         Some(Cmd::ConfigInit) => {
             let path = config::Config::write_default()?;
             println!("{}", path.display());

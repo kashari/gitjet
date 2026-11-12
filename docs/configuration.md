@@ -295,6 +295,7 @@ repository's Git directory, so all worktrees of a repository share it.
 | `shelf/<id>/` | One folder per shelf entry: `meta.json`, `changes.patch` and copies of untracked files in `untracked/`. |
 | `local-history/` | Local history snapshots: `objects/`, `index.jsonl`, `state.json` and a `lock` file. Linked worktrees use `local-history/worktrees/<id>/`. |
 | `rebase/` | The todo list and commit messages written for the last interactive rebase. |
+| `worktree-<pid>/` | Temporary work tree used while `gitjet pick --onto <branch>` runs. Removed when it finishes. |
 | `conflict-compare/` | Temporary copies of the base, yours and theirs versions used to compare conflicting versions. |
 
 Recent branches are not stored by gitjet; they come from Git's reflog.

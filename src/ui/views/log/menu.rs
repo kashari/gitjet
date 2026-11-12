@@ -2,13 +2,17 @@
 //! action palette).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
-use crate::action::Action;
+use crate::action::{Action, Task};
 use crate::ctx::Ctx;
 use crate::git::history::{self, ResetMode};
 use crate::git::log::Commit;
+use crate::git::pick;
 use crate::ui::diff_view::{self, DiffSource};
-use crate::ui::popups::{ConfirmPopup, InputPopup, MenuItem, MenuPopup, TextAreaPopup};
+use crate::ui::popups::{
+    ConfirmPopup, InputPopup, MenuItem, MenuPopup, MessagePopup, TextAreaPopup,
+};
 use crate::ui::views::{files, rebase};
 use crate::util::truncate;
 
@@ -531,20 +535,51 @@ fn resolve_all(ctx: &Ctx, text: &str) -> Result<Vec<Commit>, String> {
         .collect()
 }
 
-/// Palette: cherry-pick typed revisions (in the order given).
+/// Palette: cherry-pick a pasted list of commits onto the current branch. The list is checked
+/// in the background, shown for confirmation, then applied oldest first.
 pub fn cherry_pick_prompt(_ctx: &Ctx) -> Action {
-    Action::popup(
-        InputPopup::new("Cherry-pick", "", |text, ctx| {
-            match resolve_all(ctx, &text) {
-                Ok(mut commits) => {
-                    commits.reverse();
-                    cherry_pick(commits)
-                }
-                Err(e) => Action::Error(e),
+    Action::popup(TextAreaPopup::new(
+        "Cherry-pick commits: paste hashes (any order), Ctrl+S to continue",
+        "",
+        |text, _ctx| {
+            let revs = pick::parse_revs(&text);
+            if revs.is_empty() {
+                return Action::Error("No commits given".into());
             }
-        })
-        .prompt("Revisions to apply onto the current branch, oldest first, separated by spaces"),
-    )
+            // The plan travels from the background job to the confirmation on the UI thread.
+            let slot: Arc<Mutex<Option<pick::PickPlan>>> = Arc::default();
+            let out = slot.clone();
+            Action::Spawn(Task {
+                label: "Checking commits".into(),
+                job: Box::new(move |repo| {
+                    let plan = pick::plan(repo, &revs, None, false)?;
+                    *out.lock().unwrap_or_else(|e| e.into_inner()) = Some(plan);
+                    Ok(String::new())
+                }),
+                silent: false,
+                report: false,
+                then: Some(Box::new(move |result| {
+                    let plan = slot.lock().unwrap_or_else(|e| e.into_inner()).take();
+                    match (result, plan) {
+                        (Ok(_), Some(plan)) => confirm_pick(plan),
+                        (Err(e), _) => Action::Error(format!("{e:#}")),
+                        _ => Action::None,
+                    }
+                })),
+            })
+        },
+    ))
+}
+
+fn confirm_pick(plan: pick::PickPlan) -> Action {
+    if plan.to_apply().is_empty() {
+        return Action::popup(MessagePopup::new("Cherry-pick", plan.describe()));
+    }
+    Action::popup(ConfirmPopup::new(
+        "Cherry-pick",
+        plan.describe(),
+        move |_ctx| Action::spawn("Cherry-pick", move |repo| plan.run(repo)),
+    ))
 }
 
 /// Palette: revert typed revisions (in the order given).
@@ -643,5 +678,53 @@ mod tests {
             compare_previous(&commit("r", &["p"])),
             Action::Popup(_)
         ));
+    }
+
+    fn popup_text(a: Action, ctx: &Ctx) -> String {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+        let Action::Popup(mut p) = a else {
+            panic!("expected a popup");
+        };
+        let mut term = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        term.draw(|f| p.draw(f, f.area(), ctx)).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..20)
+            .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn cherry_pick_dialog_shows_the_checked_list_before_running() {
+        use crate::git::testutil::*;
+        let (_d, repo) = temp_repo();
+        commit_files(&repo, &[("a.txt", "1\n")], "base");
+        repo.run(&["checkout", "-q", "-b", "feature"]).unwrap();
+        let fix = commit_files(&repo, &[("b.txt", "2\n")], "fix login");
+        repo.run(&["checkout", "-q", "main"]).unwrap();
+        let base = repo.head_commit().unwrap();
+        let ctx = Ctx::new(repo, crate::config::Config::default());
+
+        assert!(matches!(cherry_pick_prompt(&ctx), Action::Popup(_)));
+        let plan = pick::plan(&ctx.repo, &[fix, base.clone()], None, false).unwrap();
+        let screen = popup_text(confirm_pick(plan), &ctx);
+        assert!(
+            screen.contains("Cherry-pick 1 commit onto main:"),
+            "{screen}"
+        );
+        assert!(screen.contains("fix login"), "{screen}");
+        assert!(
+            screen.contains("already on the branch, skipped"),
+            "{screen}"
+        );
+
+        // Nothing left to apply: a message, not a question.
+        let plan = pick::plan(&ctx.repo, &[base], None, false).unwrap();
+        let screen = popup_text(confirm_pick(plan), &ctx);
+        assert!(
+            screen.contains("Cherry-pick 0 commits onto main:"),
+            "{screen}"
+        );
     }
 }

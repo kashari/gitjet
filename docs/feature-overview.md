@@ -49,7 +49,7 @@ every action in gitjet.
 | Show only one author's commits | Log: `.` then `a` |
 | Go to a hash, branch or tag | Log: `g`; **Go to commit…** |
 | Copy a commit hash | Log: `y`, or `.` then `c` |
-| Cherry-pick commits | Log: `.` then `p` (marked commits are applied oldest first); **Cherry-pick…** |
+| Cherry-pick commits | Log: `.` then `p` (marked commits are applied oldest first); **Cherry-pick commits…** (paste a list of hashes); `gitjet pick` from the shell |
 | Revert a commit | Log: `.` then `r`; **Revert…** |
 | Reset the current branch to a commit | Log: `.` then `R`, then soft / mixed / hard / keep; **Reset HEAD…** |
 | Undo the last commit | Log: `.` then `u` on `HEAD`; **Undo last commit** |

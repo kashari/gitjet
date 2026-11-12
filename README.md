@@ -93,7 +93,14 @@ gitjet clone <url>     # clone, then open
 gitjet init [dir]      # create a repository, then open
 gitjet config-init     # write a config file with all defaults
 gitjet config-path     # show where the config file lives
+
+gitjet pick <hash>...                    # cherry-pick commits by hash, oldest first
+gitjet pick --onto release/1.4 <hash>... # ...onto another branch, without switching to it
+gitjet revert <hash>...                  # revert commits by hash
 ```
+
+`pick` and `revert` check every hash first, show the plan and ask before running. See
+[Command line](docs/command-line.md).
 
 ### Ask in plain English (AI builds)
 

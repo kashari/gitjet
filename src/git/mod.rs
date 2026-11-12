@@ -22,6 +22,7 @@ pub mod hosting;
 pub mod local_history;
 pub mod partial;
 pub mod patch;
+pub mod pick;
 pub mod rebase;
 pub mod remote;
 pub mod shelf;

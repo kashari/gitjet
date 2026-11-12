@@ -1170,7 +1170,7 @@ pub fn palette() -> Vec<PaletteItem> {
             run: menu::reset_prompt,
         },
         PaletteItem {
-            name: "Cherry-pick…",
+            name: "Cherry-pick commits…",
             run: menu::cherry_pick_prompt,
         },
         PaletteItem {
