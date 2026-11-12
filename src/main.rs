@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod ctx;
 mod git;
+mod screenshot;
 mod theme;
 mod ui;
 mod util;
@@ -129,6 +130,7 @@ fn main() -> Result<()> {
             std::fs::copy(src, dst).with_context(|| format!("copying {src} to {dst}"))?;
             return Ok(());
         }
+        Some(screenshot::ARG) => return screenshot::run(&raw[2..]),
         Some(bench::ARG) => {
             return bench::run(std::path::Path::new(raw.get(2).map_or(".", String::as_str)));
         }

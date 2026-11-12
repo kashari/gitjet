@@ -84,6 +84,23 @@ The binaries are not code-signed yet: macOS may ask you to allow the app in
 *System Settings → Privacy & Security*, and Windows SmartScreen may show "Unknown publisher".
 The install scripts download with `curl`/PowerShell, which normally avoids both prompts.
 
+## Themes
+
+16 built-in themes. Switch from inside gitjet with `:` → **Switch theme…** (applies at once and
+is saved), or set `theme = "nord"` in the config file. Single colors can be replaced in a
+`[colors]` section; see [Configuration](docs/configuration.md#themes).
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/themes/dark.svg" alt="dark theme"><br><code>dark</code></td><td align="center"><img src="docs/screenshots/themes/light.svg" alt="light theme"><br><code>light</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/dracula.svg" alt="dracula theme"><br><code>dracula</code></td><td align="center"><img src="docs/screenshots/themes/nord.svg" alt="nord theme"><br><code>nord</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/gruvbox-dark.svg" alt="gruvbox-dark theme"><br><code>gruvbox-dark</code></td><td align="center"><img src="docs/screenshots/themes/gruvbox-light.svg" alt="gruvbox-light theme"><br><code>gruvbox-light</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/solarized-dark.svg" alt="solarized-dark theme"><br><code>solarized-dark</code></td><td align="center"><img src="docs/screenshots/themes/solarized-light.svg" alt="solarized-light theme"><br><code>solarized-light</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/tokyo-night.svg" alt="tokyo-night theme"><br><code>tokyo-night</code></td><td align="center"><img src="docs/screenshots/themes/catppuccin-mocha.svg" alt="catppuccin-mocha theme"><br><code>catppuccin-mocha</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/catppuccin-latte.svg" alt="catppuccin-latte theme"><br><code>catppuccin-latte</code></td><td align="center"><img src="docs/screenshots/themes/one-dark.svg" alt="one-dark theme"><br><code>one-dark</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/monokai.svg" alt="monokai theme"><br><code>monokai</code></td><td align="center"><img src="docs/screenshots/themes/github-dark.svg" alt="github-dark theme"><br><code>github-dark</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/rose-pine.svg" alt="rose-pine theme"><br><code>rose-pine</code></td><td align="center"><img src="docs/screenshots/themes/high-contrast.svg" alt="high-contrast theme"><br><code>high-contrast</code></td></tr>
+</table>
+
 ## Usage
 
 ```bash

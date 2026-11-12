@@ -149,6 +149,52 @@ pub fn run(ctx: Ctx) -> Result<()> {
     res
 }
 
+/// Draw the app into memory instead of the terminal: open `tab`, type `keys` (plain
+/// characters; `\n` is Enter, `\t` is Tab), wait until everything has loaded, and return the
+/// screen. For `gitjet __screenshot`.
+pub fn render_off_screen(
+    ctx: Ctx,
+    tab: usize,
+    width: u16,
+    height: u16,
+    keys: &str,
+) -> ratatui::buffer::Buffer {
+    use ratatui::backend::TestBackend;
+    let mut terminal = ratatui::Terminal::new(TestBackend::new(width, height))
+        .expect("an in-memory terminal cannot fail");
+    let mut app = App::new(ctx);
+    app.switch_tab(tab);
+    let mut keys = keys.chars();
+    let mut quiet = 0;
+    // Draw, let background loads land, repeat until nothing has been pending for a while; one
+    // key is typed each time the screen is at rest.
+    for _ in 0..600 {
+        let _ = terminal.draw(|f| app.draw(f));
+        app.poll_tasks();
+        if std::mem::take(&mut app.refresh_pending) {
+            app.refresh_all();
+        }
+        app.tick();
+        let busy = crate::ui::bg::pending() || !app.busy_text().is_empty();
+        crate::ui::bg::take_finished();
+        quiet = if busy { 0 } else { quiet + 1 };
+        if quiet >= 8 {
+            let Some(c) = keys.next() else { break };
+            let code = match c {
+                '\n' => KeyCode::Enter,
+                '\t' => KeyCode::Tab,
+                c => KeyCode::Char(c),
+            };
+            app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
+            quiet = 0;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    app.toast = None;
+    let _ = terminal.draw(|f| app.draw(f));
+    terminal.backend().buffer().clone()
+}
+
 fn enter(mouse: bool) -> Result<DefaultTerminal> {
     let terminal = ratatui::init();
     if mouse {

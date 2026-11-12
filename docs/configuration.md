@@ -283,6 +283,8 @@ kind = "none"
 | `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`, `tokyo-night`, `catppuccin-mocha`, `one-dark`, `monokai`, `github-dark`, `rose-pine`, `high-contrast` | dark | Painted by the theme |
 | `gruvbox-light`, `solarized-light`, `catppuccin-latte` | light | Painted by the theme |
 
+Pictures of all of them are in the [README](../README.md#themes).
+
 To switch, open the palette (`:`), choose **Switch theme…** and pick one. It applies at once
 and is saved as the `theme` line of your config file; the rest of the file is not touched.
 
