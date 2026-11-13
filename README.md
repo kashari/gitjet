@@ -86,7 +86,7 @@ The install scripts download with `curl`/PowerShell, which normally avoids both 
 
 ## Themes
 
-16 built-in themes. Switch from inside gitjet with `:` → **Switch theme…** (applies at once and
+19 built-in themes. Switch from inside gitjet with `:` → **Switch theme…** (applies at once and
 is saved), or set `theme = "nord"` in the config file. Single colors can be replaced in a
 `[colors]` section; see [Configuration](docs/configuration.md#themes).
 
@@ -97,8 +97,10 @@ is saved), or set `theme = "nord"` in the config file. Single colors can be repl
 <tr><td align="center"><img src="docs/screenshots/themes/solarized-dark.svg" alt="solarized-dark theme"><br><code>solarized-dark</code></td><td align="center"><img src="docs/screenshots/themes/solarized-light.svg" alt="solarized-light theme"><br><code>solarized-light</code></td></tr>
 <tr><td align="center"><img src="docs/screenshots/themes/tokyo-night.svg" alt="tokyo-night theme"><br><code>tokyo-night</code></td><td align="center"><img src="docs/screenshots/themes/catppuccin-mocha.svg" alt="catppuccin-mocha theme"><br><code>catppuccin-mocha</code></td></tr>
 <tr><td align="center"><img src="docs/screenshots/themes/catppuccin-latte.svg" alt="catppuccin-latte theme"><br><code>catppuccin-latte</code></td><td align="center"><img src="docs/screenshots/themes/one-dark.svg" alt="one-dark theme"><br><code>one-dark</code></td></tr>
-<tr><td align="center"><img src="docs/screenshots/themes/monokai.svg" alt="monokai theme"><br><code>monokai</code></td><td align="center"><img src="docs/screenshots/themes/github-dark.svg" alt="github-dark theme"><br><code>github-dark</code></td></tr>
-<tr><td align="center"><img src="docs/screenshots/themes/rose-pine.svg" alt="rose-pine theme"><br><code>rose-pine</code></td><td align="center"><img src="docs/screenshots/themes/high-contrast.svg" alt="high-contrast theme"><br><code>high-contrast</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/one-dark-pro.svg" alt="one-dark-pro theme"><br><code>one-dark-pro</code></td><td align="center"><img src="docs/screenshots/themes/panda.svg" alt="panda theme"><br><code>panda</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/bluloco-light.svg" alt="bluloco-light theme"><br><code>bluloco-light</code></td><td align="center"><img src="docs/screenshots/themes/monokai.svg" alt="monokai theme"><br><code>monokai</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/github-dark.svg" alt="github-dark theme"><br><code>github-dark</code></td><td align="center"><img src="docs/screenshots/themes/rose-pine.svg" alt="rose-pine theme"><br><code>rose-pine</code></td></tr>
+<tr><td align="center"><img src="docs/screenshots/themes/high-contrast.svg" alt="high-contrast theme"><br><code>high-contrast</code></td><td></td></tr>
 </table>
 
 ## Usage

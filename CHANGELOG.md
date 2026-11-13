@@ -18,6 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the last change in front of every line; the bottom line shows the commit of the line under
   the cursor.
 
+- Three more themes, with the colors of the VS Code themes of the same name: `one-dark-pro`,
+  `panda` and `bluloco-light` (19 in total).
+
 ### Changed
 
 - Easier keys for the searches, which work in every terminal: `,` or `F3` for Find in files and

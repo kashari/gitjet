@@ -256,6 +256,63 @@ const PALETTES: &[(&str, Palette)] = &[
             syntax: "base16-ocean.dark",
         },
     ),
+    // One Dark Pro (Binaryify): the same colors as Atom's One Dark above.
+    (
+        "one-dark-pro",
+        Palette {
+            bg: 0x282c34,
+            fg: 0xabb2bf,
+            dim: 0x5c6370,
+            border: 0x3e4451,
+            selection: 0x3e4451,
+            blue: 0x61afef,
+            green: 0x98c379,
+            yellow: 0xe5c07b,
+            purple: 0xc678dd,
+            cyan: 0x56b6c2,
+            red: 0xe06c75,
+            orange: 0xd19a66,
+            syntax: "base16-ocean.dark",
+        },
+    ),
+    // Panda Syntax (tinkertrain); the selection is its translucent orange over the background.
+    (
+        "panda",
+        Palette {
+            bg: 0x292a2b,
+            fg: 0xe6e6e6,
+            dim: 0x676b79,
+            border: 0x3f4142,
+            selection: 0x5e4d3b,
+            blue: 0x45a9f9,
+            green: 0x19f9d8,
+            yellow: 0xffb86c,
+            purple: 0xb084eb,
+            cyan: 0x6fc1ff,
+            red: 0xff2c6d,
+            orange: 0xff75b5,
+            syntax: "base16-eighties.dark",
+        },
+    ),
+    // Bluloco Light (uloco).
+    (
+        "bluloco-light",
+        Palette {
+            bg: 0xf9f9f9,
+            fg: 0x383a42,
+            dim: 0xa0a1a7,
+            border: 0xd5d7d8,
+            selection: 0xd2ecff,
+            blue: 0x275fe4,
+            green: 0x23974a,
+            yellow: 0xc5a332,
+            purple: 0x823ff1,
+            cyan: 0x0098dd,
+            red: 0xd52753,
+            orange: 0xdf631c,
+            syntax: "InspiredGitHub",
+        },
+    ),
     (
         "monokai",
         Palette {
