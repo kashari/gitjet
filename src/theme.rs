@@ -314,6 +314,43 @@ const PALETTES: &[(&str, Palette)] = &[
             syntax: "InspiredGitHub",
         },
     ),
+    // "Theme" by tal7aouy and its "Theme Darker" variant: One Dark with stronger colors.
+    (
+        "tal7aouy",
+        Palette {
+            bg: 0x282c34,
+            fg: 0xabb2bf,
+            dim: 0x7f848e,
+            border: 0x3e4452,
+            selection: 0x404859,
+            blue: 0x61afef,
+            green: 0x89ca78,
+            yellow: 0xe5c07b,
+            purple: 0xd55fde,
+            cyan: 0x42b3c2,
+            red: 0xef596f,
+            orange: 0xd19a66,
+            syntax: "base16-ocean.dark",
+        },
+    ),
+    (
+        "tal7aouy-darker",
+        Palette {
+            bg: 0x23272e,
+            fg: 0xabb2bf,
+            dim: 0x7f848e,
+            border: 0x3e4452,
+            selection: 0x3d4555,
+            blue: 0x61afef,
+            green: 0x89ca78,
+            yellow: 0xe5c07b,
+            purple: 0xd55fde,
+            cyan: 0x42b3c2,
+            red: 0xef596f,
+            orange: 0xd19a66,
+            syntax: "base16-ocean.dark",
+        },
+    ),
     // GitHub Light Theme (Hyzeta / yunlingz): white, black text, GitHub's syntax colors.
     (
         "github-light",

@@ -91,7 +91,7 @@ kind = "gitlab"
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `theme` | string | `"dark"` | Color theme, one of the 20 listed under [Themes](#themes). Change it from inside gitjet with the palette entry **Switch theme…**, which also writes this line for you. An unknown name uses `dark` and is reported at startup. |
+| `theme` | string | `"dark"` | Color theme, one of the 22 listed under [Themes](#themes). Change it from inside gitjet with the palette entry **Switch theme…**, which also writes this line for you. An unknown name uses `dark` and is reported at startup. |
 | `mouse` | bool | `true` | Mouse support: click tabs, scroll lists, click rows. Set to `false` to leave the mouse to your terminal (for example for selecting text). |
 | `editor` | string | not set | Command used to open files ("open in editor" actions, editing a conflicted file). When not set, gitjet uses `$VISUAL`, then `$EDITOR`, then `notepad` on Windows and `vi` elsewhere. The command runs through the system shell (`cmd /C` on Windows, `sh -c` elsewhere), so it can include arguments, for example `"your-editor --wait"`. gitjet suspends its screen while the editor runs. |
 
@@ -281,7 +281,7 @@ kind = "none"
 |---|---|---|
 | `dark` | dark | Your terminal's own background |
 | `light` | light | White, painted by the theme |
-| `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`, `tokyo-night`, `catppuccin-mocha`, `one-dark`, `one-dark-pro`, `panda`, `monokai`, `github-dark`, `rose-pine`, `high-contrast` | dark | Painted by the theme |
+| `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`, `tokyo-night`, `catppuccin-mocha`, `one-dark`, `one-dark-pro`, `tal7aouy`, `tal7aouy-darker`, `panda`, `monokai`, `github-dark`, `rose-pine`, `high-contrast` | dark | Painted by the theme |
 | `gruvbox-light`, `solarized-light`, `catppuccin-latte`, `bluloco-light`, `github-light` | light | Painted by the theme |
 
 Pictures of all of them are in the [README](../README.md#themes).

@@ -18,8 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the last change in front of every line; the bottom line shows the commit of the line under
   the cursor.
 
-- Four more themes, with the colors of the VS Code themes of the same name: `one-dark-pro`,
-  `panda`, `bluloco-light` and `github-light` (20 in total).
+- Six more themes, with the colors of the VS Code themes they are named after: `one-dark-pro`,
+  `panda`, `bluloco-light`, `github-light`, and `tal7aouy` and `tal7aouy-darker` ("Theme" and
+  "Theme Darker" by tal7aouy). 22 in total.
 - `bg = "terminal"` under `[colors]` keeps the terminal's own background with any theme.
 
 ### Changed
