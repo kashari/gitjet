@@ -351,6 +351,26 @@ const PALETTES: &[(&str, Palette)] = &[
             syntax: "base16-ocean.dark",
         },
     ),
+    // Apple Dark (Mac3): near-black background, white text. Comments and the selection are a
+    // step brighter than in the VS Code theme, for contrast in lists.
+    (
+        "apple-dark",
+        Palette {
+            bg: 0x1c1c1e,
+            fg: 0xffffff,
+            dim: 0x9a9a9e,
+            border: 0x3f3f41,
+            selection: 0x173b52,
+            blue: 0x49ace9,
+            green: 0x49e9a6,
+            yellow: 0xe4b781,
+            purple: 0xdf769b,
+            cyan: 0x29b8db,
+            red: 0xf14c4c,
+            orange: 0xe66533,
+            syntax: "base16-eighties.dark",
+        },
+    ),
     // GitHub Light Theme (Hyzeta / yunlingz): white, black text, GitHub's syntax colors.
     (
         "github-light",

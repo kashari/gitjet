@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct Config {
     /// A built-in theme: dark, light, dracula, nord, gruvbox-dark, gruvbox-light, solarized-dark,
-    /// solarized-light, tokyo-night, catppuccin-mocha, catppuccin-latte, one-dark, one-dark-pro, panda, bluloco-light, github-light, tal7aouy, tal7aouy-darker,
+    /// solarized-light, tokyo-night, catppuccin-mocha, catppuccin-latte, one-dark, one-dark-pro, panda, bluloco-light, github-light, tal7aouy, tal7aouy-darker, apple-dark,
     /// monokai,
     /// github-dark, rose-pine, high-contrast
     pub theme: String,

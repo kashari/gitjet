@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-13
+
+### Added
+
+- Theme `apple-dark`, after the Apple Dark theme for VS Code: a near-black background
+  (`#1c1c1e`), white text and bright colors. 23 themes in total.
+
 ## [0.3.1] - 2026-11-13
 
 ### Added
@@ -374,7 +381,8 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/kashari/gitjet/releases/tag/v0.3.2
 [0.3.1]: https://github.com/kashari/gitjet/releases/tag/v0.3.1
 [0.3.0]: https://github.com/kashari/gitjet/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kashari/gitjet/releases/tag/v0.2.0
