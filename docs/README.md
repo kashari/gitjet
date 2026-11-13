@@ -19,7 +19,9 @@ New here? Start with [Getting started](getting-started.md). Looking for a specif
 - [Getting started](getting-started.md): install, first launch, the screen, how to operate
   gitjet, command-line options.
 - [Feature overview](feature-overview.md): common Git tasks and the tab and key for each.
-- [Search](search.md): find in files (`Ctrl+F`), go to file or class (`Ctrl+N`).
+- [Search](search.md): find in files (`,`), go to file or class (`;`).
+- [The built-in editor](editor.md): change marks next to the line numbers, blame next to the
+  text (`gb`).
 - [Command line](command-line.md): `gitjet pick`, `revert`, `sync`, `cleanup`, `undo` and
   `fixup` without opening the UI.
 - [Keyboard reference](keyboard-reference.md): every key for every tab and dialog.

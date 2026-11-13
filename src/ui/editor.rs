@@ -4,6 +4,7 @@
 
 mod buffer;
 mod ex;
+mod gutter;
 mod pattern;
 mod vim;
 
@@ -23,6 +24,8 @@ use syntect::parsing::{ParseState, ScopeStack, SyntaxReference};
 
 use crate::action::Action;
 use crate::ctx::Ctx;
+use crate::git::blame::BlameLine;
+use crate::ui::bg::Background;
 use crate::ui::diff_view::highlight;
 use crate::ui::{KeyHelp, Popup};
 use buffer::Pos;
@@ -37,23 +40,128 @@ pub struct Editor {
     text_area: Rect,
     gutter: u16,
     wrote: bool,
+    /// Path relative to the repository root, `/`-separated; `None` for a file outside it
+    rel: Option<String>,
+    /// The file's lines in the last commit (`None` inside: not committed yet)
+    head_loader: Background<Option<Vec<String>>>,
+    head: Option<Vec<String>>,
+    /// Change mark of every buffer line against `head`
+    marks: Vec<gutter::Mark>,
+    /// The buffer changed since `marks` and `blame_rows` were computed
+    stale: bool,
+    blame_on: bool,
+    /// Blame of the file on disk together with the lines it was computed for
+    blame_loader: Background<BlameData>,
+    blame: Blamed,
+    /// For every buffer line, its line in the blamed file
+    blame_rows: Vec<Option<usize>>,
 }
+
+/// Width of the blame column: date, author, one space.
+const BLAME_WIDTH: u16 = 24;
 
 impl Editor {
     /// Open `path` at 1-based `line`; `name` is shown in the status line.
     pub fn open(path: PathBuf, line: Option<usize>, name: String, ctx: &Ctx) -> Result<Self> {
         let syntax = Syntax::new(&name, ctx);
+        let rel = path
+            .strip_prefix(&ctx.repo.root)
+            .ok()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .filter(|p| !p.is_empty());
         let mut vim = Vim::open(path, line)?;
         vim.name = name;
-        Ok(Self {
+        let mut editor = Self {
             vim,
             syntax,
             left: 0,
             text_area: Rect::default(),
             gutter: 0,
             wrote: false,
-        })
+            rel,
+            head_loader: Background::new(),
+            head: None,
+            marks: Vec::new(),
+            stale: true,
+            blame_on: false,
+            blame_loader: Background::new(),
+            blame: None,
+            blame_rows: Vec::new(),
+        };
+        editor.load_head(ctx);
+        Ok(editor)
     }
+
+    /// Read the committed version of the file, for the change marks.
+    fn load_head(&mut self, ctx: &Ctx) {
+        let Some(rel) = self.rel.clone() else { return };
+        self.head_loader.start(&ctx.repo, move |repo| {
+            repo.run_bytes(&["show", &format!("HEAD:{rel}")])
+                .ok()
+                .map(|bytes| gutter::lines_of(&bytes))
+        });
+    }
+
+    /// Blame the file as it is on disk (the last saved state).
+    fn load_blame(&mut self, ctx: &Ctx) {
+        let Some(rel) = self.rel.clone() else {
+            self.blame = Some(Err("this file is outside the repository".into()));
+            return;
+        };
+        self.blame_loader.start(&ctx.repo, move |repo| {
+            let disk = std::fs::read(repo.path(&rel)).map_err(|e| e.to_string())?;
+            let blame = repo.blame(&rel, None).map_err(|e| format!("{e:#}"))?;
+            Ok((blame, gutter::lines_of(&disk)))
+        });
+    }
+
+    fn toggle_blame(&mut self, ctx: &Ctx) {
+        self.blame_on = !self.blame_on;
+        if self.blame_on && self.blame.is_none() {
+            self.load_blame(ctx);
+        }
+        self.stale = true;
+    }
+
+    /// Pick up loaded data and recompute what depends on the buffer's lines after an edit.
+    fn update_gutter(&mut self) {
+        if let Some(head) = self.head_loader.poll() {
+            self.head = head;
+            self.stale = true;
+        }
+        if let Some(blame) = self.blame_loader.poll() {
+            self.blame = Some(blame);
+            self.stale = true;
+        }
+        if !std::mem::take(&mut self.stale) {
+            return;
+        }
+        let lines = self.vim.buf.lines();
+        self.marks = match &self.head {
+            Some(head) => gutter::marks(head, lines),
+            None => Vec::new(),
+        };
+        self.blame_rows = match &self.blame {
+            Some(Ok((_, disk))) if self.blame_on => gutter::line_map(disk, lines),
+            _ => Vec::new(),
+        };
+    }
+}
+
+/// Blame of the file on disk, with the lines it was computed for.
+type BlameData = Result<(Vec<BlameLine>, Vec<String>), String>;
+type Blamed = Option<BlameData>;
+
+/// The blame entry of buffer line `row` (`None`: changed since the last save, not committed,
+/// or blame not loaded). `rows` maps buffer lines to lines of the blamed file.
+fn blame_of<'a>(blame: &'a Blamed, rows: &[Option<usize>], row: usize) -> Option<&'a BlameLine> {
+    let Some(Ok((blame, _))) = blame else {
+        return None;
+    };
+    let disk_row = (*rows.get(row)?)?;
+    blame
+        .get(disk_row)
+        .filter(|b| b.commit != crate::git::blame::UNCOMMITTED)
 }
 
 /// The key as the editor sees it: control keys as control codes, others as [`keys`] chars.
@@ -104,7 +212,10 @@ impl Popup for Editor {
         v.ensure_visible();
         if let Some(from) = v.buf.take_changed() {
             self.syntax.invalidate(from);
+            self.stale = true;
         }
+        self.update_gutter();
+        let v = &mut self.vim;
         let lines = v.buf.lines();
         let bottom = (v.top + text.height as usize).min(lines.len());
         self.syntax.update(lines, bottom);
@@ -112,11 +223,21 @@ impl Popup for Editor {
         let th = &ctx.theme;
         let ts = v.opts.tabstop.max(1);
         let numbers = v.opts.number || v.opts.relativenumber;
-        let gutter = if numbers {
+        // Left of the text: [blame] [line number] [change mark].
+        let blame_w = if self.blame_on && text.width > BLAME_WIDTH + 20 {
+            BLAME_WIDTH
+        } else {
+            0
+        };
+        let number_w = if numbers {
             lines.len().to_string().len().max(3) as u16 + 1
         } else {
             0
         };
+        let mark_w = u16::from(self.head.is_some());
+        let gutter = blame_w + number_w + mark_w;
+        let cursor_commit =
+            blame_of(&self.blame, &self.blame_rows, v.cur.row).map(|b| b.commit.clone());
         let width = text.width.saturating_sub(gutter) as usize;
         self.gutter = gutter;
         self.text_area = text;
@@ -153,8 +274,44 @@ impl Popup for Editor {
                 } else {
                     th.dimmed()
                 };
-                let w = gutter as usize - 1;
-                buf.set_string(text.x, sy, format!("{n:>w$} "), style);
+                let w = number_w as usize - 1;
+                buf.set_string(text.x + blame_w, sy, format!("{n:>w$} "), style);
+            }
+            if blame_w > 0 {
+                let (label, style) =
+                    match (&self.blame, blame_of(&self.blame, &self.blame_rows, row)) {
+                        (None, _) => ("…".to_string(), th.dimmed()),
+                        (Some(Err(_)), _) | (_, None) => (String::new(), th.dimmed()),
+                        (_, Some(b)) => {
+                            let label =
+                                format!("{} {}", crate::util::format_date(b.author_time), b.author);
+                            // The lines of the commit under the cursor stand out.
+                            let style = if cursor_commit.as_deref() == Some(b.commit.as_str()) {
+                                Style::default().fg(th.accent)
+                            } else {
+                                th.dimmed()
+                            };
+                            (label, style)
+                        }
+                    };
+                let label = crate::util::fit(&label, blame_w as usize - 1);
+                buf.set_string(text.x, sy, label, style);
+            }
+            if mark_w > 0 {
+                use gutter::Mark;
+                let (glyph, color) = match self.marks.get(row).copied().unwrap_or_default() {
+                    Mark::Same => (" ", th.dim),
+                    Mark::Added => ("▎", th.added),
+                    Mark::Modified => ("▎", th.modified),
+                    Mark::DeletedAbove => ("▔", th.removed),
+                    Mark::DeletedBelow => ("▁", th.removed),
+                };
+                buf.set_string(
+                    text.x + blame_w + number_w,
+                    sy,
+                    glyph,
+                    Style::default().fg(color),
+                );
             }
             let line = lines[row].as_str();
             let spans = self.syntax.line(row);
@@ -281,14 +438,32 @@ impl Popup for Editor {
             return;
         }
         let pending_w = v.pending.chars().count() as u16;
+        let room = cmd.width.saturating_sub(pending_w + 1) as usize;
         if let Some((m, err)) = &v.msg {
             let style = if *err {
                 Style::default().fg(th.error)
             } else {
                 th.text()
             };
-            let room = cmd.width.saturating_sub(pending_w + 1) as usize;
             buf.set_stringn(cmd.x, cmd.y, m, room, style);
+        } else if self.blame_on {
+            // The commit that last changed the line under the cursor.
+            let info = match (
+                &self.blame,
+                blame_of(&self.blame, &self.blame_rows, v.cur.row),
+            ) {
+                (None, _) => "Loading blame…".to_string(),
+                (Some(Err(e)), _) => format!("Blame: {e}"),
+                (_, Some(b)) => format!(
+                    "{} {}, {}: {}",
+                    &b.commit[..b.commit.len().min(8)],
+                    b.author,
+                    crate::util::relative_time(b.author_time),
+                    b.summary
+                ),
+                (_, None) => "Not committed yet".to_string(),
+            };
+            buf.set_stringn(cmd.x, cmd.y, info, room, th.dimmed());
         }
         if !v.pending.is_empty() {
             let px = cmd.right().saturating_sub(pending_w + 1);
@@ -300,12 +475,27 @@ impl Popup for Editor {
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent, _ctx: &Ctx) -> Action {
+    fn handle_key(&mut self, key: KeyEvent, ctx: &Ctx) -> Action {
+        // Blame on/off: `gb` or Alt+B in normal mode (plain `b` and `B` move by words).
+        if self.vim.mode == Mode::Normal && key.code == KeyCode::Char('b') {
+            let alt = key.modifiers.contains(KeyModifiers::ALT);
+            if alt || self.vim.pending == "g" {
+                if !alt {
+                    self.vim.key(keys::ESC);
+                }
+                self.toggle_blame(ctx);
+                return Action::None;
+            }
+        }
         let Some(k) = to_key(&key) else {
             return Action::None;
         };
         let out = self.vim.key(k);
         self.wrote |= out.wrote;
+        if out.wrote && self.blame_on {
+            // Blame is of the file on disk, which just changed.
+            self.load_blame(ctx);
+        }
         if out.quit {
             return if self.wrote {
                 Action::Batch(vec![Action::ClosePopup, Action::Refresh])
@@ -358,8 +548,22 @@ impl Popup for Editor {
         true
     }
 
+    fn refresh(&mut self, ctx: &Ctx) {
+        // A commit, checkout or pull changes what the file is compared and blamed against.
+        self.load_head(ctx);
+        if self.blame_on {
+            self.load_blame(ctx);
+        }
+    }
+
+    fn poll(&mut self, _ctx: &Ctx) -> Action {
+        self.update_gutter();
+        Action::None
+    }
+
     fn help(&self) -> Vec<KeyHelp> {
         vec![
+            ("gb", "blame on/off"),
             ("i/a/o", "insert"),
             ("Esc", "normal mode"),
             (":w", "save"),
@@ -473,6 +677,103 @@ mod tests {
     fn screen(term: &Terminal<TestBackend>, y: u16) -> String {
         let b = term.backend().buffer();
         (0..b.area.width).map(|x| b[(x, y)].symbol()).collect()
+    }
+
+    fn rows(e: &mut Editor, ctx: &Ctx, n: u16) -> Vec<String> {
+        let mut term = Terminal::new(TestBackend::new(70, 12)).unwrap();
+        term.draw(|f| e.draw(f, f.area(), ctx)).unwrap();
+        (1..=n)
+            .map(|y| screen(&term, y).trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn gutter_marks_changes_against_the_last_commit() {
+        use crate::git::testutil::commit_files;
+        let (_dir, repo) = temp_repo();
+        commit_files(&repo, &[("code.rs", "one\ntwo\nthree\nfour\n")], "first");
+        let path = repo.path("code.rs");
+        let ctx = Ctx::new(repo, Config::default());
+        let mut e = Editor::open(path, None, "code.rs".into(), &ctx).unwrap();
+        // Unchanged: a blank mark column between the number and the text.
+        assert_eq!(rows(&mut e, &ctx, 2), ["  1  one", "  2  two"]);
+
+        // Change line 2, add a line after it, delete "four".
+        press(&mut e, &ctx, "jcwTWO\x1bonew\x1bGdd");
+        assert_eq!(
+            rows(&mut e, &ctx, 4),
+            ["  1  one", "  2 ▎TWO", "  3 ▎new", "  4 ▁three"]
+        );
+        let mut term = Terminal::new(TestBackend::new(70, 12)).unwrap();
+        term.draw(|f| e.draw(f, f.area(), &ctx)).unwrap();
+        let cell = |y: u16| term.backend().buffer()[(4, y)].fg;
+        assert_eq!(cell(2), ctx.theme.modified, "changed line");
+        // "two" was replaced by two lines: both count as modified, as one changed block.
+        assert_eq!(
+            cell(3),
+            ctx.theme.modified,
+            "second line of the changed block"
+        );
+        assert_eq!(cell(4), ctx.theme.removed, "deleted below");
+
+        // Undo everything: the marks go away.
+        press(&mut e, &ctx, "uuu");
+        assert_eq!(rows(&mut e, &ctx, 4)[1], "  2  two");
+
+        // A line added between unchanged lines is green.
+        press(&mut e, &ctx, "ggOtop\x1b");
+        assert_eq!(rows(&mut e, &ctx, 2), ["  1 ▎top", "  2  one"]);
+        let mut term = Terminal::new(TestBackend::new(70, 12)).unwrap();
+        term.draw(|f| e.draw(f, f.area(), &ctx)).unwrap();
+        assert_eq!(term.backend().buffer()[(4, 1)].fg, ctx.theme.added);
+    }
+
+    #[test]
+    fn gb_shows_who_changed_each_line_next_to_the_text() {
+        use crate::git::testutil::commit_files;
+        let (_dir, repo) = temp_repo();
+        commit_files(&repo, &[("code.rs", "one\ntwo\n")], "first commit");
+        let author = repo.config_get("user.name").unwrap();
+        let path = repo.path("code.rs");
+        let ctx = Ctx::new(repo, Config::default());
+        let mut e = Editor::open(path, None, "code.rs".into(), &ctx).unwrap();
+        press(&mut e, &ctx, "gb");
+        let today = crate::util::format_date(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+        );
+        let shown = rows(&mut e, &ctx, 11);
+        assert!(
+            shown[0].starts_with(&format!("{today} {}", &author[..author.len().min(8)])),
+            "{shown:?}"
+        );
+        assert!(shown[0].ends_with("  1  one"), "{shown:?}");
+        // The command line names the commit of the line under the cursor (once the message
+        // from opening the file is gone).
+        press(&mut e, &ctx, "jk");
+        let shown = rows(&mut e, &ctx, 11);
+        assert!(
+            shown.iter().any(|r| r.contains("first commit")),
+            "{shown:?}"
+        );
+
+        // A line typed now has nobody to blame yet; the others keep theirs.
+        press(&mut e, &ctx, "onew\x1b");
+        let shown = rows(&mut e, &ctx, 11);
+        assert!(shown[1].trim_start().starts_with("2 ▎new"), "{shown:?}");
+        assert!(shown[2].starts_with(&today), "{shown:?}");
+        assert!(
+            shown.iter().any(|r| r.contains("Not committed yet")),
+            "{shown:?}"
+        );
+
+        // `gb` again hides the column; `g` followed by `g` still goes to the top.
+        press(&mut e, &ctx, "gb");
+        assert_eq!(rows(&mut e, &ctx, 1), ["  1  one"]);
+        press(&mut e, &ctx, "Ggg");
+        assert_eq!(e.vim.cur.row, 0);
     }
 
     #[test]

@@ -8,17 +8,22 @@ open the result in the editor (the built-in one, or yours; see
 
 | Key | Palette entry | What it does |
 |---|---|---|
-| `Ctrl+F` | **Find in files…** | Text search in all files |
-| `Ctrl+N` or `Ctrl+P` | **Go to file or class…** | Open a file by name, or a class / function by name |
+| `,` or `F3` | **Find in files…** | Text search in all files |
+| `;` or `F2` | **Go to file or class…** | Open a file by name, or a class / function by name |
+
+`Ctrl+F` and `Ctrl+N` / `Ctrl+P` do the same where the terminal passes them on. Some terminals
+keep those for themselves, which is why the plain keys exist. Like `q` and the digits, the
+plain keys go into a text field when one has the focus (a filter, the commit message).
 
 Tracked and untracked files are searched. Files ignored by `.gitignore` (build output,
 dependencies) and binary files are not.
 
 > **About `Shift` `Shift` and `Ctrl+Shift+F`.** A terminal does not tell a program that Shift
 > was pressed on its own, so a double Shift cannot be detected, and most terminals send the same
-> code for `Ctrl+Shift+F` as for `Ctrl+F`. That is why the keys are `Ctrl+F` and `Ctrl+N`.
+> code for `Ctrl+Shift+F` as for `Ctrl+F`, or use it themselves (in Git Bash it switches to full
+> screen). That is why the keys are `,` and `;`.
 
-## Find in files (`Ctrl+F`)
+## Find in files (`,`)
 
 Type at least two characters. The list shows every matching line as `path:line  text` with the
 match highlighted; below it is a preview of the file around the selected match.
@@ -36,7 +41,7 @@ The three switches are shown at the right of the search field (`Aa`, `W`, `.*`) 
 when on. At most 1000 matches are listed; when there are more, the status line says so and the
 search stops early, so a very common word does not slow anything down.
 
-## Go to file or class (`Ctrl+N`)
+## Go to file or class (`;`)
 
 Type part of a name. Files come first, best match on top:
 

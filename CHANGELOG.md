@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-13
+
+### Added
+
+- **Change marks in the built-in editor**: a colored bar next to the line number shows, while
+  you type, which lines are new (green), changed (blue) or have deleted lines next to them
+  (red), compared with the last commit.
+- **Blame next to the text in the built-in editor**: `gb` or `Alt+B` shows the date and author
+  of the last change in front of every line; the bottom line shows the commit of the line under
+  the cursor.
+
+### Changed
+
+- Easier keys for the searches, which work in every terminal: `,` or `F3` for Find in files and
+  `;` or `F2` for Go to file or class. `Ctrl+F`, `Ctrl+N` and `Ctrl+P` still work where the
+  terminal passes them on (and now also with Shift held).
+
 ## [0.3.0] - 2026-11-12
 
 ### Removed
@@ -350,7 +367,8 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/kashari/gitjet/releases/tag/v0.3.1
 [0.3.0]: https://github.com/kashari/gitjet/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kashari/gitjet/releases/tag/v0.2.0
 [0.1.9]: https://github.com/klajdishark/gitjet/compare/v0.1.1...v0.1.9

@@ -36,8 +36,8 @@ the field). While a dialog or fullscreen view is open, it receives all keys inst
 | `[` / `]` | Previous / next tab |
 | `:` or `` Alt+` `` | Action palette (search all actions) |
 | `?` | Keys of the current tab, global keys and the config file path |
-| `Ctrl+F` | Find in files (see [Search](search.md)) |
-| `Ctrl+N` or `Ctrl+P` | Go to file or class |
+| `,` or `F3` (also `Ctrl+F`) | Find in files (see [Search](search.md)) |
+| `;` or `F2` (also `Ctrl+N`, `Ctrl+P`) | Go to file or class |
 | `F5` | Refresh everything |
 | `q` | Quit |
 | `Ctrl+C` | Quit (always, also inside dialogs) |

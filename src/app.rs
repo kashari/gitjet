@@ -55,10 +55,12 @@ pub fn layout(area: Rect) -> [Rect; 4] {
     .areas(area)
 }
 
-const GLOBAL_HELP: [KeyHelp; 7] = [
+const GLOBAL_HELP: [KeyHelp; 9] = [
     ("1-9", "switch tab"),
     ("[ ]", "prev/next tab"),
     (":", "actions"),
+    (", or F3", "find in files"),
+    ("; or F2", "go to file or class"),
     ("?", "help"),
     ("F5", "refresh"),
     ("q", "quit"),
@@ -627,11 +629,20 @@ impl App {
                 }
                 // IDE searches, from every tab. (A terminal cannot report a double Shift, and
                 // most cannot tell Ctrl+Shift+F from Ctrl+F.)
-                KeyCode::Char('f') if key.modifiers == KeyModifiers::CONTROL => {
+                KeyCode::Char(',') | KeyCode::F(3) if plain => {
                     self.apply(Action::popup(crate::ui::search::FindInFiles::new()));
                     return;
                 }
-                KeyCode::Char('n' | 'p') if key.modifiers == KeyModifiers::CONTROL => {
+                KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.apply(Action::popup(crate::ui::search::FindInFiles::new()));
+                    return;
+                }
+                KeyCode::Char(';') | KeyCode::F(2) if plain => {
+                    let goto = crate::ui::search::GoTo::new(&self.ctx);
+                    self.apply(Action::popup(goto));
+                    return;
+                }
+                KeyCode::Char('n' | 'p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     let goto = crate::ui::search::GoTo::new(&self.ctx);
                     self.apply(Action::popup(goto));
                     return;
