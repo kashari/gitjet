@@ -32,13 +32,9 @@ pub fn run(args: &[String]) -> Result<()> {
         ..crate::config::Config::default()
     };
     let ctx = crate::ctx::Ctx::new(repo, config);
-    let dark = !matches!(theme.as_str(), "light");
+    // Only `dark` has no background of its own: a typical dark terminal stands in.
     let (bg, fg) = (
-        ctx.theme.bg.unwrap_or(if dark {
-            Color::Rgb(0x16, 0x18, 0x1d)
-        } else {
-            Color::Rgb(0xff, 0xff, 0xff)
-        }),
+        ctx.theme.bg.unwrap_or(Color::Rgb(0x16, 0x18, 0x1d)),
         ctx.theme.fg,
     );
     let tab: usize = tab.parse().context("tab must be a number from 1 to 9")?;

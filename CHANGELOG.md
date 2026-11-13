@@ -18,11 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the last change in front of every line; the bottom line shows the commit of the line under
   the cursor.
 
-- Three more themes, with the colors of the VS Code themes of the same name: `one-dark-pro`,
-  `panda` and `bluloco-light` (19 in total).
+- Four more themes, with the colors of the VS Code themes of the same name: `one-dark-pro`,
+  `panda`, `bluloco-light` and `github-light` (20 in total).
+- `bg = "terminal"` under `[colors]` keeps the terminal's own background with any theme.
 
 ### Changed
 
+- The `light` theme paints a white background. Before, it kept the terminal's background, so
+  on a dark terminal its dark text could not be read.
 - Easier keys for the searches, which work in every terminal: `,` or `F3` for Find in files and
   `;` or `F2` for Go to file or class. `Ctrl+F`, `Ctrl+N` and `Ctrl+P` still work where the
   terminal passes them on (and now also with Shift held).

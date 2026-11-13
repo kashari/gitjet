@@ -73,8 +73,8 @@ fn mix(base: u32, over: u32, amount: f32) -> Color {
     Color::Rgb(ch(16), ch(8), ch(0))
 }
 
-/// Built-in themes: (name, palette). `dark` and `light` come first and keep the terminal's own
-/// background; the others paint theirs.
+/// Built-in themes: (name, palette). `dark` comes first and keeps the terminal's own
+/// background; all others paint theirs.
 const PALETTES: &[(&str, Palette)] = &[
     (
         "dracula",
@@ -262,9 +262,10 @@ const PALETTES: &[(&str, Palette)] = &[
         Palette {
             bg: 0x282c34,
             fg: 0xabb2bf,
-            dim: 0x5c6370,
-            border: 0x3e4451,
-            selection: 0x3e4451,
+            dim: 0x7f848e,
+            border: 0x3e4452,
+            // Its translucent selection (#67769660) over the background.
+            selection: 0x404859,
             blue: 0x61afef,
             green: 0x98c379,
             yellow: 0xe5c07b,
@@ -310,6 +311,25 @@ const PALETTES: &[(&str, Palette)] = &[
             cyan: 0x0098dd,
             red: 0xd52753,
             orange: 0xdf631c,
+            syntax: "InspiredGitHub",
+        },
+    ),
+    // GitHub Light Theme (Hyzeta / yunlingz): white, black text, GitHub's syntax colors.
+    (
+        "github-light",
+        Palette {
+            bg: 0xffffff,
+            fg: 0x000000,
+            dim: 0x6a737d,
+            border: 0xd1d5da,
+            selection: 0xeeeeee,
+            blue: 0x005cc5,
+            green: 0x22863a,
+            yellow: 0xe36209,
+            purple: 0x6f42c1,
+            cyan: 0x032f62,
+            red: 0xd73a49,
+            orange: 0xe36209,
             syntax: "InspiredGitHub",
         },
     ),
@@ -421,6 +441,11 @@ impl Theme {
         }
         let mut theme = Self::from_name(&config.theme);
         for (key, value) in &config.colors {
+            // `bg = "terminal"`: do not paint a background, keep the terminal's own.
+            if key == "bg" && matches!(value.trim(), "terminal" | "none") {
+                theme.bg = None;
+                continue;
+            }
             let Some(color) = parse_color(value) else {
                 problems.push(format!(
                     "[colors] {key} = \"{value}\": expected \"#rrggbb\""
@@ -567,7 +592,8 @@ impl Theme {
 
     pub fn light() -> Self {
         Self {
-            bg: None,
+            // Painted: dark text on a terminal with a dark background would be unreadable.
+            bg: Some(Color::Rgb(0xff, 0xff, 0xff)),
             fg: Color::Rgb(0x24, 0x29, 0x2f),
             dim: Color::Rgb(0x6e, 0x77, 0x81),
             accent: Color::Rgb(0x09, 0x69, 0xda),
@@ -665,7 +691,7 @@ mod tests {
             };
             let (t, problems) = Theme::from_config(&c);
             assert!(problems.is_empty(), "{n}: {problems:?}");
-            assert_eq!(t.bg.is_none(), matches!(*n, "dark" | "light"), "{n}");
+            assert_eq!(t.bg.is_none(), *n == "dark", "{n}");
             assert!(
                 crate::ui::diff_view::highlight::theme(t.syntax_theme)
                     .is_some_and(|_| crate::ui::diff_view::highlight::has_theme(t.syntax_theme)),
@@ -690,6 +716,9 @@ mod tests {
         assert_eq!(t.added, Color::Rgb(0, 255, 0));
         assert_eq!(t.bg, Some(Color::Rgb(16, 16, 16)));
         assert_eq!(problems.len(), 2, "{problems:?}");
+        // The terminal's own background instead of the theme's.
+        c.colors.insert("bg".into(), "terminal".into());
+        assert_eq!(Theme::from_config(&c).0.bg, None);
         c.theme = "no-such".into();
         assert!(Theme::from_config(&c).1[0].contains("unknown theme"));
     }

@@ -91,7 +91,7 @@ kind = "gitlab"
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `theme` | string | `"dark"` | Color theme, one of the 19 listed under [Themes](#themes). Change it from inside gitjet with the palette entry **Switch theme…**, which also writes this line for you. An unknown name uses `dark` and is reported at startup. |
+| `theme` | string | `"dark"` | Color theme, one of the 20 listed under [Themes](#themes). Change it from inside gitjet with the palette entry **Switch theme…**, which also writes this line for you. An unknown name uses `dark` and is reported at startup. |
 | `mouse` | bool | `true` | Mouse support: click tabs, scroll lists, click rows. Set to `false` to leave the mouse to your terminal (for example for selecting text). |
 | `editor` | string | not set | Command used to open files ("open in editor" actions, editing a conflicted file). When not set, gitjet uses `$VISUAL`, then `$EDITOR`, then `notepad` on Windows and `vi` elsewhere. The command runs through the system shell (`cmd /C` on Windows, `sh -c` elsewhere), so it can include arguments, for example `"your-editor --wait"`. gitjet suspends its screen while the editor runs. |
 
@@ -279,9 +279,10 @@ kind = "none"
 
 | Name | Kind | Background |
 |---|---|---|
-| `dark`, `light` | dark / light | Your terminal's own background |
+| `dark` | dark | Your terminal's own background |
+| `light` | light | White, painted by the theme |
 | `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`, `tokyo-night`, `catppuccin-mocha`, `one-dark`, `one-dark-pro`, `panda`, `monokai`, `github-dark`, `rose-pine`, `high-contrast` | dark | Painted by the theme |
-| `gruvbox-light`, `solarized-light`, `catppuccin-latte`, `bluloco-light` | light | Painted by the theme |
+| `gruvbox-light`, `solarized-light`, `catppuccin-latte`, `bluloco-light`, `github-light` | light | Painted by the theme |
 
 Pictures of all of them are in the [README](../README.md#themes).
 
@@ -296,7 +297,7 @@ Any color of the active theme can be replaced. Values are `"#rrggbb"`.
 theme = "nord"
 
 [colors]
-bg = "#1b1f27"        # background (set it on dark/light too, to stop using the terminal's)
+bg = "#1b1f27"        # background; bg = "terminal" keeps the terminal's own instead
 accent = "#ffb86c"
 added = "#7ee787"
 ```
@@ -306,6 +307,21 @@ Names: `bg`, `fg`, `dim`, `accent`, `border`, `border_focus`, `selection_bg`, `a
 `added_word_bg`, `removed_word_bg`, `hunk`, `hash`, `author`, `date`, `local_branch`,
 `remote_branch`, `tag`, `head`, `warning`, `error`, `success`. An unknown name or a value that
 is not `#rrggbb` is reported at startup and ignored.
+
+### If the colors look wrong
+
+The themes use exact colors (24-bit, "true color"). A terminal that cannot show those replaces
+each one by the nearest of its 16 basic colors: the dark blue-grey background of `one-dark`
+then turns plain grey, and the themes look alike. To check, run this in the same terminal:
+
+```bash
+printf '\033[48;2;40;44;52m          \033[0m\n'
+```
+
+It should print a very dark blue-grey bar. If the bar is grey or black, the terminal (or the
+layer between it and Windows programs) does not pass 24-bit colors on. Windows Terminal does;
+with Git Bash, a current Git for Windows on a current Windows 10 or 11 does. Until then,
+`bg = "terminal"` under `[colors]` keeps your terminal's own background.
 
 ### Fonts
 
