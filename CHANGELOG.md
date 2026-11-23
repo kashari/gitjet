@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-23
+
+### Changed
+
+- Editor: YAML files (`.yaml`, `.yml`) indent with 2 spaces (`Tab`, `>>`, `<<`); other files
+  keep 4. `:set sw=` and `:set ts=` still change it per buffer.
+
 ## [0.3.2] - 2026-11-13
 
 ### Added
@@ -381,7 +388,8 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/kashari/gitjet/releases/tag/v0.3.3
 [0.3.2]: https://github.com/kashari/gitjet/releases/tag/v0.3.2
 [0.3.1]: https://github.com/kashari/gitjet/releases/tag/v0.3.1
 [0.3.0]: https://github.com/kashari/gitjet/releases/tag/v0.3.0

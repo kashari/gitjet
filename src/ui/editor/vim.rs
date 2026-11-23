@@ -293,9 +293,20 @@ pub(super) fn load(path: &Path) -> Result<Option<(Vec<String>, bool, bool)>> {
     Ok(Some((lines, crlf, eol)))
 }
 
+/// Indent width for a file: 2 for YAML (where 2 spaces is the convention), 4 otherwise.
+fn indent_width(path: &std::path::Path) -> usize {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml") {
+        2
+    } else {
+        4
+    }
+}
+
 impl Vim {
     pub fn new(lines: Vec<String>, path: PathBuf, crlf: bool, eol: bool) -> Self {
         let expandtab = !lines.iter().any(|l| l.starts_with('\t'));
+        let width = indent_width(&path);
         Self {
             buf: Buffer::new(lines),
             cur: Pos::default(),
@@ -310,8 +321,8 @@ impl Vim {
                 smartcase: true,
                 hlsearch: true,
                 incsearch: true,
-                tabstop: 4,
-                shiftwidth: 4,
+                tabstop: width,
+                shiftwidth: width,
                 expandtab,
                 autoindent: true,
                 wrapscan: true,
@@ -2331,6 +2342,15 @@ pub(super) mod tests {
             false,
             true,
         )
+    }
+
+    #[test]
+    fn yaml_indents_two_spaces() {
+        let mut v = Vim::new(vec!["a:".into()], PathBuf::from("ci.yml"), false, true);
+        type_keys(&mut v, "A<CR><Tab>b<Esc>>>");
+        assert_eq!(v.buf.lines()[1], "    b");
+        assert_eq!(indent_width(Path::new("x.YAML")), 2);
+        assert_eq!(indent_width(Path::new("x.rs")), 4);
     }
 
     /// Type `keys`; `<Esc>`, `<CR>`, `<BS>`, `<Tab>`, arrows and `<C-x>` name special keys.
