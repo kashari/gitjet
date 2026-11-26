@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     # Publish what was built even when a platform failed (e.g. no macOS runner was available);
     # the missing archives can be attached later with `gh release upload`.
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
