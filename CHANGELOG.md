@@ -7,12 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-26
+
 ### Added
 
 - Code history (`;` `;`, palette "Code history…"): type a piece of code and see the commits
   that added, removed or changed lines containing it (`git log -G`) with just those hunks, and
   where it is in the code now (`git grep`). `Ctrl+B` / `F12` go to the declaration of the name
   typed, or to the method or class around the selected place.
+
+### Changed
+
+- Release builds: both macOS archives are built on one runner (x86_64 cross-compiled on Apple
+  Silicon). The v0.3.3 tag got no release because its Intel macOS build never got a runner, so
+  0.3.4 is the first release with the YAML indent change from 0.3.3.
 
 ## [0.3.3] - 2026-11-23
 
@@ -395,7 +403,8 @@ Initial release.
 - Repository switcher for the parent repository, worktrees, submodules, nested and recent
   repositories; clone and init from inside the app.
 
-[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/kashari/gitjet/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/kashari/gitjet/releases/tag/v0.3.4
 [0.3.3]: https://github.com/kashari/gitjet/releases/tag/v0.3.3
 [0.3.2]: https://github.com/kashari/gitjet/releases/tag/v0.3.2
 [0.3.1]: https://github.com/kashari/gitjet/releases/tag/v0.3.1

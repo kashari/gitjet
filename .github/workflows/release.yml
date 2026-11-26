@@ -15,56 +15,75 @@ env:
 
 jobs:
   build:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        # `targets` is a comma-separated list built on the same runner. Both macOS targets are
+        # built on one Apple Silicon runner (x86_64 cross-compiled): a second macOS job was often
+        # never given a runner, which held back the whole release.
         include:
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, archive: zip }
-          - { os: windows-latest, target: aarch64-pc-windows-msvc, archive: zip }
-          - { os: macos-latest, target: aarch64-apple-darwin, archive: tar.gz }
-          - { os: macos-latest, target: x86_64-apple-darwin, archive: tar.gz }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, archive: tar.gz }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, archive: tar.gz }
+          - { name: windows-x86_64, os: windows-latest, targets: x86_64-pc-windows-msvc, archive: zip }
+          - { name: windows-aarch64, os: windows-latest, targets: aarch64-pc-windows-msvc, archive: zip }
+          - { name: macos, os: macos-latest, targets: "aarch64-apple-darwin,x86_64-apple-darwin", archive: tar.gz }
+          - { name: linux-x86_64, os: ubuntu-latest, targets: x86_64-unknown-linux-musl, archive: tar.gz }
+          - { name: linux-aarch64, os: ubuntu-24.04-arm, targets: aarch64-unknown-linux-musl, archive: tar.gz }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.name }}
       - name: Install musl tools
-        if: contains(matrix.target, 'musl')
+        if: contains(matrix.targets, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          for target in ${MATRIX_TARGETS//,/ }; do
+            cargo build --release --locked --target "$target"
+          done
+        env:
+          MATRIX_TARGETS: ${{ matrix.targets }}
       - name: Package (zip)
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $name = "gitjet-${{ matrix.target }}"
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/gitjet.exe" "dist/gitjet.exe"
-          Copy-Item README.md, LICENSE dist/
-          Compress-Archive -Path dist/* -DestinationPath "$name.zip" -Force
-          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+          foreach ($target in "${{ matrix.targets }}" -split ',') {
+            $name = "gitjet-$target"
+            Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force dist | Out-Null
+            Copy-Item "target/$target/release/gitjet.exe" "dist/gitjet.exe"
+            Copy-Item README.md, LICENSE dist/
+            Compress-Archive -Path dist/* -DestinationPath "$name.zip" -Force
+            (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+          }
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
-          name="gitjet-${{ matrix.target }}"
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/gitjet" dist/
-          cp README.md LICENSE dist/
-          tar -C dist -czf "$name.tar.gz" .
-          if command -v sha256sum >/dev/null; then sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"; else shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"; fi
+          for target in ${MATRIX_TARGETS//,/ }; do
+            name="gitjet-$target"
+            rm -rf dist && mkdir -p dist
+            cp "target/$target/release/gitjet" dist/
+            cp README.md LICENSE dist/
+            tar -C dist -czf "$name.tar.gz" .
+            if command -v sha256sum >/dev/null; then sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"; else shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"; fi
+          done
+        env:
+          MATRIX_TARGETS: ${{ matrix.targets }}
       - uses: actions/upload-artifact@v4
         with:
-          name: gitjet-${{ matrix.target }}
+          name: gitjet-${{ matrix.name }}
           path: |
-            gitjet-${{ matrix.target }}.*
+            gitjet-*.zip
+            gitjet-*.zip.sha256
+            gitjet-*.tar.gz
+            gitjet-*.tar.gz.sha256
+          if-no-files-found: error
 
   release:
     name: Publish release
