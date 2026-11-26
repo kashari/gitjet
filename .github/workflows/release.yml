@@ -20,13 +20,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `targets` is a comma-separated list built on the same runner. The macOS binaries are
-        # cross-compiled on Linux with cargo-zigbuild: macOS jobs stopped getting a runner in
-        # November 2026, which held back whole releases.
+        # `targets` is a comma-separated list built on the same runner. Both macOS targets are
+        # built on one Apple Silicon runner (x86_64 cross-compiled), so a release needs only one
+        # macOS runner.
         include:
           - { name: windows-x86_64, os: windows-latest, targets: x86_64-pc-windows-msvc, archive: zip }
           - { name: windows-aarch64, os: windows-latest, targets: aarch64-pc-windows-msvc, archive: zip }
-          - { name: macos, os: ubuntu-latest, targets: "aarch64-apple-darwin,x86_64-apple-darwin", archive: tar.gz, zig: true }
+          - { name: macos, os: macos-latest, targets: "aarch64-apple-darwin,x86_64-apple-darwin", archive: tar.gz }
           - { name: linux-x86_64, os: ubuntu-latest, targets: x86_64-unknown-linux-musl, archive: tar.gz }
           - { name: linux-aarch64, os: ubuntu-24.04-arm, targets: aarch64-unknown-linux-musl, archive: tar.gz }
     steps:
@@ -40,16 +40,11 @@ jobs:
       - name: Install musl tools
         if: contains(matrix.targets, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Install cargo-zigbuild
-        if: matrix.zig
-        run: pip3 install --user ziglang==0.13.0 cargo-zigbuild
       - name: Build
         shell: bash
         run: |
-          build=build
-          if [ "${{ matrix.zig }}" = "true" ]; then build=zigbuild; fi
           for target in ${MATRIX_TARGETS//,/ }; do
-            cargo $build --release --locked --target "$target"
+            cargo build --release --locked --target "$target"
           done
         env:
           MATRIX_TARGETS: ${{ matrix.targets }}
@@ -94,7 +89,9 @@ jobs:
     name: Publish release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    # Publish what was built even when a platform failed (e.g. no macOS runner was available);
+    # the missing archives can be attached later with `gh release upload`.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
