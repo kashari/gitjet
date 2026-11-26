@@ -1,8 +1,8 @@
 [← Back to docs index](README.md)
 
-# Search: find in files, go to file or class
+# Search: find in files, go to file or class, code history
 
-Two searches work from every tab. Both search while you type, without blocking the screen, and
+Three searches work from every tab. Both search while you type, without blocking the screen, and
 open the result in the editor (the built-in one, or yours; see
 [Configuration](configuration.md)).
 
@@ -10,6 +10,7 @@ open the result in the editor (the built-in one, or yours; see
 |---|---|---|
 | `,` or `F3` | **Find in files…** | Text search in all files |
 | `;` or `F2` | **Go to file or class…** | Open a file by name, or a class / function by name |
+| `;` `;` | **Code history…** | The commits that changed a piece of code, and where it is now |
 
 `Ctrl+F` and `Ctrl+N` / `Ctrl+P` do the same where the terminal passes them on. Some terminals
 keep those for themselves, which is why the plain keys exist. Like `q` and the digits, the
@@ -59,3 +60,38 @@ declaration line with `path:line`. So a class that lives in a file with another 
 too.
 
 `Enter` opens the selection, `Esc` closes.
+
+## Code history (`;` `;`)
+
+Press `;` twice (the second `;` in the empty "go to" field switches to it). Type a piece of
+code: a function name, a call such as `check(`, a string, a config key. gitjet shows:
+
+- **History**: every commit of the current branch that added, removed or changed a line
+  containing it (`git log -G`), newest first, with hash, date, author and subject. Below the
+  list are only the hunks of the selected commit that touch that code, and a summary such as
+  "added 2 lines" or "+1 −1 lines".
+- **In the code now** (`Tab`): every place it is in the work tree today (`git grep`), with a
+  preview of the file and the method or class each place is in.
+
+The status line sums it up, for example "4 commits changed it · 2 places in 1 file now", or
+"not in the code any more" for code that was deleted.
+
+| Key | Action |
+|---|---|
+| `Tab` | Switch between History and In the code now |
+| `↑` / `↓`, `PgUp` / `PgDn` | Select a commit or a place |
+| `Shift+↑` / `Shift+↓` | Scroll the hunks of the selected commit |
+| `Enter` | History: the whole commit in the diff viewer. Now: open the place in the editor |
+| `Ctrl+B` or `F12` | Go to the declaration (see below) |
+| `Alt+C`, `Alt+W`, `Alt+R` | Match case, whole words, regular expression (as in find in files) |
+| `Esc` | Close |
+
+**Go to declaration** (`Ctrl+B` or `F12`) opens the editor at:
+
+- in History, when what you typed is a name: the class, method or function declared with that
+  name. When there are several, "go to" opens with the name filled in so you can pick one.
+- otherwise, and in "In the code now": the method, function or class that contains the
+  selected place (the first place, from History). This works by indentation and declaration
+  keywords, so it fits most languages (Java, C#, Kotlin, Python, Rust, Go, JavaScript...).
+
+Closing the editor brings you back to the code history.

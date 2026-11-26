@@ -44,6 +44,10 @@ pub struct LogQuery {
     pub grep: Option<String>,
     /// Commits whose diff adds/removes this string (`-S`)
     pub pickaxe: Option<String>,
+    /// Commits with an added or removed line matching this extended regular expression (`-G`)
+    pub changed_lines: Option<String>,
+    /// `pickaxe` and `changed_lines` ignore case
+    pub ignore_case: bool,
     /// e.g. "2 weeks ago", "2024-01-01"
     pub since: Option<String>,
     pub until: Option<String>,
@@ -66,6 +70,8 @@ impl Default for LogQuery {
             author: None,
             grep: None,
             pickaxe: None,
+            changed_lines: None,
+            ignore_case: false,
             since: None,
             until: None,
             paths: Vec::new(),
@@ -108,6 +114,12 @@ fn log_args(q: &LogQuery, max: Option<usize>) -> Vec<String> {
     }
     if let Some(s) = &q.pickaxe {
         args.push(format!("-S{s}"));
+    }
+    if let Some(g) = &q.changed_lines {
+        args.push(format!("-G{g}"));
+    }
+    if q.ignore_case && (q.pickaxe.is_some() || q.changed_lines.is_some()) {
+        args.push("--regexp-ignore-case".into());
     }
     if let Some(s) = &q.since {
         args.push(format!("--since={s}"));

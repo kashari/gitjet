@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Code history (`;` `;`, palette "Code history…"): type a piece of code and see the commits
+  that added, removed or changed lines containing it (`git log -G`) with just those hunks, and
+  where it is in the code now (`git grep`). `Ctrl+B` / `F12` go to the declaration of the name
+  typed, or to the method or class around the selected place.
+
 ## [0.3.3] - 2026-11-23
 
 ### Changed

@@ -4,7 +4,12 @@
 //! - [`GoTo`]: open a file by (part of) its name, `CamelHumps` included, or a class, struct or
 //!   function by name.
 //!
-//! Both search while you type, off the UI thread, and open the selected result in the editor.
+//! - [`CodeHistory`] (`;;`): which commits changed a piece of code, and where it is now.
+//!
+//! All search while you type, off the UI thread, and open the selected result in the editor.
+
+mod code_history;
+pub use code_history::CodeHistory;
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -40,6 +45,10 @@ pub fn palette() -> Vec<PaletteItem> {
         PaletteItem {
             name: "Go to file or class…",
             run: |ctx| Action::popup(GoTo::new(ctx)),
+        },
+        PaletteItem {
+            name: "Code history…",
+            run: |_| Action::popup(CodeHistory::new()),
         },
     ]
 }
@@ -450,6 +459,13 @@ impl GoTo {
         }
     }
 
+    /// "Go to" with `query` already typed.
+    pub fn with_query(ctx: &Ctx, query: &str) -> Self {
+        let mut p = Self::new(ctx);
+        p.input.set(query);
+        p
+    }
+
     fn update(&mut self, ctx: &Ctx) {
         if let Some(loaded) = self.files_loader.poll() {
             match loaded {
@@ -588,6 +604,10 @@ impl Popup for GoTo {
     fn handle_key(&mut self, key: KeyEvent, ctx: &Ctx) -> Action {
         match key.code {
             KeyCode::Esc => return Action::ClosePopup,
+            // `;` opens "go to", `;;` the code history.
+            KeyCode::Char(';') if self.input.is_empty() && key.modifiers.is_empty() => {
+                return Action::ClosePopup.then(Action::popup(CodeHistory::new()));
+            }
             // The file opens in place of this dialog.
             KeyCode::Enter => {
                 let open = self.open(ctx);
@@ -616,7 +636,14 @@ impl Popup for GoTo {
     }
 
     fn help(&self) -> Vec<KeyHelp> {
-        vec![("Enter", "open in the editor"), ("Esc", "close")]
+        vec![
+            ("Enter", "open in the editor"),
+            (
+                ";",
+                "(first key) code history: commits that changed a piece of code",
+            ),
+            ("Esc", "close"),
+        ]
     }
 }
 
@@ -718,6 +745,13 @@ mod tests {
         assert_eq!(
             opened(p.handle_key(enter, &ctx)),
             Some(("UserService.java".into(), None))
+        );
+
+        // A second `;` in the empty field switches to the code history.
+        let mut p = GoTo::new(&ctx);
+        let a = p.handle_key(KeyEvent::new(KeyCode::Char(';'), KeyModifiers::NONE), &ctx);
+        assert!(
+            matches!(&a, Action::Batch(v) if matches!(v[..], [Action::ClosePopup, Action::Popup(_)]))
         );
 
         // A line number after the name.

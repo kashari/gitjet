@@ -38,6 +38,7 @@ the field). While a dialog or fullscreen view is open, it receives all keys inst
 | `?` | Keys of the current tab, global keys and the config file path |
 | `,` or `F3` (also `Ctrl+F`) | Find in files (see [Search](search.md)) |
 | `;` or `F2` (also `Ctrl+N`, `Ctrl+P`) | Go to file or class |
+| `;` `;` | Code history: the commits that changed a piece of code, and where it is now |
 | `F5` | Refresh everything |
 | `q` | Quit |
 | `Ctrl+C` | Quit (always, also inside dialogs) |

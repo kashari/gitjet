@@ -148,6 +148,195 @@ pub fn symbols(repo: &Repo, name: &str, limit: usize) -> Result<Vec<Hit>> {
     Ok(grep(repo, &pattern, opts, limit)?.0)
 }
 
+/// `text` as an extended regular expression that matches it literally (understood by both git
+/// and the `regex` crate).
+fn ere_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if ".[]()*+?{}|^$\\".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// The pattern for a code search: the text itself (escaped unless `regex`), as a whole word if asked.
+fn code_pattern(text: &str, opts: GrepOptions) -> String {
+    let p = if opts.regex {
+        text.to_string()
+    } else {
+        ere_escape(text)
+    };
+    if opts.whole_word {
+        format!("(^|[^[:alnum:]_])({p})($|[^[:alnum:]_])")
+    } else {
+        p
+    }
+}
+
+/// Matches the lines a code search is about, the same way git does for [`code_history`].
+pub fn code_matcher(text: &str, opts: GrepOptions) -> Result<regex::Regex> {
+    Ok(regex::RegexBuilder::new(&code_pattern(text, opts))
+        .case_insensitive(!opts.case_sensitive)
+        .build()?)
+}
+
+/// Commits of the current branch that added, removed or changed a line containing `text`
+/// (`git log -G`), newest first, at most `limit`.
+pub fn code_history(
+    repo: &Repo,
+    text: &str,
+    opts: GrepOptions,
+    limit: usize,
+) -> Result<Vec<super::log::Commit>> {
+    repo.log(&super::log::LogQuery {
+        changed_lines: Some(code_pattern(text, opts)),
+        ignore_case: !opts.case_sensitive,
+        topo: false,
+        max: limit,
+        ..Default::default()
+    })
+}
+
+/// What commit `rev` did to the searched code: only the hunks with an added or removed line
+/// that `matcher` matches, in the files where that happened.
+pub fn code_changes(
+    repo: &Repo,
+    rev: &str,
+    matcher: &regex::Regex,
+) -> Result<Vec<super::diff::FileDiff>> {
+    use super::diff::LineKind;
+    let mut diffs = repo.diff_commit(rev, &[], &super::diff::DiffOptions::default())?;
+    for d in &mut diffs {
+        d.hunks.retain(|h| {
+            h.lines.iter().any(|l| {
+                matches!(l.kind, LineKind::Added | LineKind::Removed)
+                    && matcher.is_match(&l.content)
+            })
+        });
+    }
+    diffs.retain(|d| !d.hunks.is_empty());
+    Ok(diffs)
+}
+
+/// Lines of `diffs` matching `matcher` that were (added, removed).
+pub fn count_changed(diffs: &[super::diff::FileDiff], matcher: &regex::Regex) -> (usize, usize) {
+    use super::diff::LineKind;
+    let mut n = (0, 0);
+    for l in diffs.iter().flat_map(|d| &d.hunks).flat_map(|h| &h.lines) {
+        if matcher.is_match(&l.content) {
+            match l.kind {
+                LineKind::Added => n.0 += 1,
+                LineKind::Removed => n.1 += 1,
+                _ => {}
+            }
+        }
+    }
+    n
+}
+
+/// Name declared on `line` after one of the [`DECLARATIONS`] keywords (`class UserService` →
+/// `UserService`).
+fn declared_name(line: &str) -> Option<&str> {
+    let keywords: Vec<&str> = DECLARATIONS.split('|').collect();
+    let mut words = line
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|w| !w.is_empty());
+    while let Some(w) = words.next() {
+        if keywords.contains(&w) {
+            return words.next();
+        }
+    }
+    None
+}
+
+/// Declarations of exactly `name` (a class, struct, function... called that), ignoring
+/// declarations whose name only contains it.
+pub fn declarations_of(repo: &Repo, name: &str) -> Result<Vec<Hit>> {
+    let mut found = symbols(repo, name, 200)?;
+    found.retain(|h| declared_name(&h.text).is_some_and(|n| n.eq_ignore_ascii_case(name)));
+    // An exact-case match first.
+    found.sort_by_key(|h| declared_name(&h.text) != Some(name));
+    Ok(found)
+}
+
+/// True for a line that looks like the start of a method or function without a declaration
+/// keyword (`public void login() {`, `int main(void)`), and not a statement such as `if (x) {`.
+fn looks_like_signature(line: &str) -> bool {
+    const STATEMENTS: &[&str] = &[
+        "if",
+        "else",
+        "for",
+        "foreach",
+        "while",
+        "do",
+        "switch",
+        "case",
+        "catch",
+        "try",
+        "return",
+        "throw",
+        "new",
+        "match",
+        "when",
+        "synchronized",
+        "using",
+        "lock",
+        "with",
+        "elif",
+    ];
+    let t = line.trim();
+    let first = t
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .next()
+        .unwrap_or("");
+    let Some(open) = t.find('(') else {
+        return false;
+    };
+    let before = t[..open].trim_end();
+    // `name(` preceded by something (a type or modifiers): `void login(`, not a call `login(`.
+    let has_type = before.contains(|c: char| c.is_whitespace()) || before.ends_with('>');
+    !first.is_empty()
+        && !STATEMENTS.contains(&first)
+        && has_type
+        && !before.contains('=')
+        && !t.starts_with("//")
+        && !t.starts_with('*')
+        && (t.ends_with('{') || t.ends_with(')') || t.ends_with(':') || t.ends_with(','))
+}
+
+/// The declaration (method, function, class...) that contains 1-based `line` of a file: the
+/// nearest line above it, less indented, that declares something. 1-based.
+pub fn enclosing_declaration(lines: &[String], line: usize) -> Option<usize> {
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let start = line.checked_sub(1)?.min(lines.len().checked_sub(1)?);
+    let here = &lines[start];
+    // The line itself may be the declaration.
+    if declared_name(here).is_some() || looks_like_signature(here) {
+        return Some(start + 1);
+    }
+    let mut limit = if here.trim().is_empty() {
+        usize::MAX
+    } else {
+        indent(here)
+    };
+    for i in (0..start).rev() {
+        let l = &lines[i];
+        if l.trim().is_empty() {
+            continue;
+        }
+        let ind = indent(l);
+        if ind < limit {
+            if declared_name(l).is_some() || looks_like_signature(l) {
+                return Some(i + 1);
+            }
+            limit = ind;
+        }
+    }
+    None
+}
+
 /// How well file `path` answers `query`, higher is better; `None` when it does not match.
 ///
 /// As in an IDE: the query is matched against the file name first. `UsSe` finds
@@ -342,6 +531,45 @@ mod tests {
         let lines: Vec<usize> = found.iter().map(|h| h.line).collect();
         assert_eq!(lines, [1, 2], "struct Joiner and fn join_all");
         assert!(symbols(&repo, "login helper", 50).unwrap().is_empty());
+    }
+
+    #[test]
+    fn enclosing_declarations_in_several_languages() {
+        let lines = |s: &str| s.lines().map(str::to_string).collect::<Vec<_>>();
+        let java = lines(
+            "public class Auth {\n    private int n;\n\n    public void login(String u) {\n        if (u != null) {\n            check(u);\n        }\n    }\n}\n",
+        );
+        assert_eq!(
+            enclosing_declaration(&java, 6),
+            Some(4),
+            "method, not the if"
+        );
+        assert_eq!(enclosing_declaration(&java, 2), Some(1), "field: the class");
+        assert_eq!(
+            enclosing_declaration(&java, 4),
+            Some(4),
+            "the declaration itself"
+        );
+        let py = lines("class A:\n    def run(self):\n        x = call(1)\n");
+        assert_eq!(enclosing_declaration(&py, 3), Some(2));
+        let rs = lines("impl Foo {\n    pub fn go(&self) {\n        let x = bar(1);\n    }\n}\n");
+        assert_eq!(enclosing_declaration(&rs, 3), Some(2));
+        assert_eq!(enclosing_declaration(&lines("x = 1\n"), 1), None);
+        assert_eq!(enclosing_declaration(&[], 1), None);
+    }
+
+    #[test]
+    fn declarations_of_a_name_are_exact_and_code_changes_keep_matching_hunks() {
+        let (_d, repo) = setup();
+        let found = declarations_of(&repo, "Joiner").unwrap();
+        assert_eq!(found.len(), 1);
+        assert!(declarations_of(&repo, "Join").unwrap().is_empty());
+        let m = code_matcher("JOIN_ALL", GrepOptions::default()).unwrap();
+        let changes = code_changes(&repo, "HEAD", &m).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(count_changed(&changes, &m), (1, 0));
+        let history = code_history(&repo, "fn join_all(", GrepOptions::default(), 10).unwrap();
+        assert_eq!(history.len(), 1);
     }
 
     #[test]
